@@ -1,7 +1,12 @@
 [project]
 name = "datacenter-change-trigger"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.13"
-dependencies = []
+description = "CLI tool for triggering datacenter metadata updates"
+authors = [{ name = "Nikos Sokos", email = "nsokos@noa.com" }]
+dependencies = ["requests"]
+
+[project.scripts]
+datacenter_change_trigger = "datacenter_change_trigger.cli:main"
+[build-system]
+requires = ["setuptools>=62.0", "wheel"]
+build-backend = "setuptools.build_meta"
