@@ -3,7 +3,12 @@ name = "datacenter-change-trigger"
 version = "0.1.0"
 description = "CLI tool for triggering datacenter metadata updates"
 authors = [{ name = "Nikos Sokos", email = "nsokos@noa.com" }]
-dependencies = ["requests"]
+dependencies = [
+    "appdirs>=1.4.4",
+    "requests",
+]
+readme = "README.md"
+requires-python = ">=3.8"
 
 [project.scripts]
 datacenter_change_trigger = "datacenter_change_trigger.cli:main"
