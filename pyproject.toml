@@ -5,6 +5,7 @@ description = "CLI tool for triggering datacenter metadata updates"
 authors = [{ name = "Nikos Sokos", email = "nsokos@noa.com" }]
 dependencies = [
     "appdirs>=1.4.4",
+    "pytest>=8.3.5",
     "requests",
 ]
 readme = "README.md"

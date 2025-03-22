@@ -114,18 +114,21 @@ def load_cached_nodes():
 
         except (json.JSONDecodeError, ValueError) as e:
             logging.warning(f"Cache file is corrupted: {e}. Deleting it.")
-            CACHE_FILE.unlink()
+            try:
+                CACHE_FILE.unlink()
+            except OSError:
+                logging.warning("Failed to delete corrupted cache.")
 
+    # Cache is missing or bad → try fetching
+    fetched = fetch_nodes_from_api()
+    if fetched:
+        return fetched
 
-    # If cache is missing or bad, try fetching again
-    return fetch_nodes_from_api()
+    # Last resort
+    logging.warning("Falling back to DEFAULT_NODES")
+    return DEFAULT_NODES
+
 
 def load_nodes():
-    """
-    Public function to load nodes:
-    - Try cache
-    - Fallback to API
-    - Fallback to DEFAULT_NODES
-    """
     nodes = load_cached_nodes()
     return nodes if nodes else DEFAULT_NODES

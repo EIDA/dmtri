@@ -27,9 +27,9 @@ def main():
     shared.add_argument("-c", "--channel", nargs="+", default=["*"],
                         help="FDSN channel code(s), supports wildcards")
     shared.add_argument("-S", "--starttime", required=True,
-                        help="Start time (ISO 8601)")
+                        help="Start time")
     shared.add_argument("-E", "--endtime", default=datetime.utcnow().isoformat(),
-                        help="End time (ISO 8601, default: now)")
+                        help="End time, default: now)")
     shared.add_argument("--type", default="data,metadata",
                         help="Comma-separated types to process (data, metadata)")
 
@@ -108,7 +108,7 @@ def main():
         full_url, base_url, data = result
         print(f"\nFound data from: {base_url}")
         print(f"Query URL: {full_url}")
-        print(f"\n{data}")
+        #print(f"\n{data}")
     else:
         print("\nNo node returned valid metadata for the given parameters.")
         sys.exit(1)
