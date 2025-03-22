@@ -1,6 +1,6 @@
 import argparse
 import sys
-from datetime import datetime, UTC
+from datetime import datetime
 from datacenter_change_trigger import nodes, query
 
 VERSION = "0.1.0"
@@ -15,15 +15,23 @@ def main():
 
     subparsers = parser.add_subparsers(dest="command")
 
-    # Shared options
+    # Shared options for 'refresh' and 'clean'
     shared = argparse.ArgumentParser(add_help=False)
-    shared.add_argument("-n", "--network", nargs="+", default=["*"], help="FDSN network code(s)")
-    shared.add_argument("-s", "--station", nargs="+", default=["*"], help="FDSN station code(s)")
-    shared.add_argument("-l", "--location", nargs="+", default=["*"], help="FDSN location code(s)")
-    shared.add_argument("-c", "--channel", nargs="+", default=["*"], help="FDSN channel code(s)")
-    shared.add_argument("-S", "--starttime", required=True, help="Start time (ISO 8601)")
-    shared.add_argument("-E", "--endtime", default=datetime.now(UTC).isoformat(), help="End time (default: now)")
-   
+
+    shared.add_argument("-n", "--network", nargs="+", default=["*"],
+                        help="FDSN network code(s), supports wildcards")
+    shared.add_argument("-s", "--station", nargs="+", default=["*"],
+                        help="FDSN station code(s), supports wildcards")
+    shared.add_argument("-l", "--location", nargs="+", default=["*"],
+                        help="FDSN location code(s), supports wildcards")
+    shared.add_argument("-c", "--channel", nargs="+", default=["*"],
+                        help="FDSN channel code(s), supports wildcards")
+    shared.add_argument("-S", "--starttime", required=True,
+                        help="Start time (ISO 8601)")
+    shared.add_argument("-E", "--endtime", default=datetime.utcnow().isoformat(),
+                        help="End time (ISO 8601, default: now)")
+    shared.add_argument("--type", default="data,metadata",
+                        help="Comma-separated types to process (data, metadata)")
 
     # Commands
     subparsers.add_parser("refresh", parents=[shared], help="Refresh data/metadata")
@@ -31,7 +39,7 @@ def main():
 
     args = parser.parse_args()
 
-    # Handle --reload-nodes as a standalone command
+    # Handle standalone --reload-nodes
     if args.reload_nodes and args.command is None:
         print("Refreshing node cache from routing service...")
         fetched = nodes.fetch_nodes_from_api()
@@ -45,9 +53,9 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    # Basic validation
+    # Validate network/station constraint
     if args.network == ["*"] and args.station == ["*"]:
-        print("Error: At least --network or --station must be specified.", file=sys.stderr)
+        print("Error: You must specify at least --network or --station (not both '*').", file=sys.stderr)
         sys.exit(1)
 
     # Load or reload nodes
@@ -60,7 +68,29 @@ def main():
     else:
         node_list = nodes.load_nodes()
 
-    # Collect query parameters
+    # Parse and validate times
+    try:
+        start_dt = datetime.fromisoformat(args.starttime)
+        end_dt = datetime.fromisoformat(args.endtime)
+    except ValueError:
+        print("Error: Invalid date format. Use ISO format (e.g. 2025-01-01T00:00:00)", file=sys.stderr)
+        sys.exit(1)
+
+    duration_days = (end_dt - start_dt).days
+    if duration_days > 7:
+        print(f"Warning: You are querying more than 7 days of data ({duration_days} days).")
+        proceed = input("Are you sure you want to continue? (y/N): ").strip().lower()
+        if proceed != "y":
+            print("Aborted by user.")
+            sys.exit(0)
+
+    # Parse type
+    types = [t.strip() for t in args.type.split(",") if t.strip() in ("data", "metadata")]
+    if not types:
+        print("Error: --type must contain at least one of 'data' or 'metadata'", file=sys.stderr)
+        sys.exit(1)
+
+    # Build query parameters
     query_params = {
         "network": args.network,
         "station": args.station,
@@ -68,9 +98,10 @@ def main():
         "channel": args.channel,
         "starttime": args.starttime,
         "endtime": args.endtime,
+        "type": types,
     }
 
-    # Execute query
+    # Run query
     result = query.query_all_nodes_parallel(node_list, query_params)
 
     if result:

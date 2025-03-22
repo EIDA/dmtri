@@ -10,15 +10,19 @@ def build_station_query_url(base_url: str, params: dict) -> str:
     Build a complete FDSN Station query URL from a base and parameter dictionary.
     """
     query_params = {
-        "starttime": params["starttime"],
-        "endtime": params["endtime"],
         "network": ",".join(params["network"]),
         "station": ",".join(params["station"]),
         "location": ",".join(params["location"]),
         "channel": ",".join(params["channel"]),
+        "level":"response",
         "nodata": 404,
-        
     }
+
+    # Only include time filters if defined
+    if params.get("starttime"):
+        query_params["starttime"] = params["starttime"]
+    if params.get("endtime"):
+        query_params["endtime"] = params["endtime"]
 
     return f"{base_url.rstrip('/')}/{FDSN_ENDPOINT}?{urlencode(query_params)}"
 
