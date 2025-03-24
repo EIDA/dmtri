@@ -1,39 +1,78 @@
 # datacenter-change-trigger
 
-A CLI tool to trigger metadata and data update workflows across EIDA datacenters.
+Trigger metadata and data refresh workflows across EIDA FDSN nodes.
 
-This tool queries the FDSN Station web service using custom parameters and is designed to later integrate with systems like `seedpsd`, `wfcatalog`, and `availability` via hooks.
 
----
+## Installation
 
-## 🚀 Usage
+Clone the repository:
 
 ```bash
-datacenter_change_trigger [COMMAND] [OPTIONS]
+git clone https://github.com/EIDA/datacenter-change-trigger.git
+cd datacenter-change-trigger
 ```
 
-### Commands:
-- `refresh` — trigger metadata/data actions
-- `clean` — trigger cleanup actions
-- `--reload-nodes` — update the node list from the EIDA routing service
+Set up the environment:
 
-### Common options:
-- `--network`, `--station`, `--location`, `--channel`
-- `--starttime`, `--endtime` (ISO or `YYYY-MM-DD`)
-- `--type` (`data`, `metadata`, or both)
+```bash
+uv sync
+```
 
-At least `--network` or `--station` must be specified.  
-If the selected time range exceeds 7 days, a confirmation is required.
+Run the CLI:
 
----
+```bash
+uv run datacenter_change_trigger refresh \\
+  --network FR \\
+  --station CIEL \\
+  --starttime 2025-01-01T00:00:00
+```
 
-## 📦 Installation
+Make sure you have [uv](https://github.com/astral-sh/uv) installed.
 
-Will be updated when uploaded to PyPI.
 
----
+## Configuration
 
-## 🗂️ Project URL
+Create a configuration file in:
 
-Issues and development happen at:  
-[https://github.com/EIDA/datacenter-change-trigger](https://github.com/EIDA/datacenter-change-trigger)
+```
+~/.config/datacenter-change-trigger/config.toml
+```
+
+Example:
+
+```toml
+[endpoints]
+NOA = "https://eida.gein.noa.gr"
+GFZ = "https://geofon.gfz.de"
+ODC = "https://orfeus-eu.org"
+```
+
+
+## Usage
+
+Run the CLI using:
+
+```bash
+uv run datacenter_change_trigger refresh \
+  --network FR \
+  --station CIEL \
+  --starttime 2025-01-01T00:00:00
+```
+
+Optional:
+
+```bash
+--endtime 2025-01-10T00:00:00
+--type data,metadata
+--config ./config.toml  # optional override
+```
+
+You must provide at least one of `--network` or `--station`.
+
+## Development
+
+Run tests:
+
+```bash
+uv run pytest
+```

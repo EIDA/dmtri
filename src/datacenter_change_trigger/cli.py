@@ -1,22 +1,27 @@
 import argparse
 import sys
 from datetime import datetime
-from datacenter_change_trigger import nodes, query
+from pathlib import Path
+import shutil
+
+from datacenter_change_trigger import query
+from datacenter_change_trigger.config import load_config
 
 VERSION = "0.1.0"
 PROJECT_URL = "https://github.com/EIDA/datacenter-change-trigger"
 
 def main():
+    global_options = argparse.ArgumentParser(add_help=False)
+    global_options.add_argument("--config", help="Path to custom configuration file")
+
     parser = argparse.ArgumentParser(
-        description="Trigger data/metadata refresh across EIDA datacenters"
+        description="Trigger data/metadata refresh for multiple EIDA endpoints",
+        parents=[global_options]
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}\n{PROJECT_URL}")
-    parser.add_argument("--reload-nodes", action="store_true", help="Refresh and cache the list of EIDA nodes")
-
     subparsers = parser.add_subparsers(dest="command")
 
-    # Shared options for 'refresh' and 'clean'
-    shared = argparse.ArgumentParser(add_help=False)
+    shared = argparse.ArgumentParser(add_help=False, parents=[global_options])
 
     shared.add_argument("-n", "--network", nargs="+", default=["*"],
                         help="FDSN network code(s), supports wildcards")
@@ -27,53 +32,42 @@ def main():
     shared.add_argument("-c", "--channel", nargs="+", default=["*"],
                         help="FDSN channel code(s), supports wildcards")
     shared.add_argument("-S", "--starttime", required=True,
-                        help="Start time")
+                        help="Start time (ISO 8601 format)")
     shared.add_argument("-E", "--endtime", default=datetime.utcnow().isoformat(),
-                        help="End time, default: now)")
+                        help="End time (default: now)")
     shared.add_argument("--type", default="data,metadata",
                         help="Comma-separated types to process (data, metadata)")
 
-    # Commands
     subparsers.add_parser("refresh", parents=[shared], help="Refresh data/metadata")
     subparsers.add_parser("clean", parents=[shared], help="Clean outdated data/metadata")
 
     args = parser.parse_args()
 
-    # Handle standalone --reload-nodes
-    if args.reload_nodes and args.command is None:
-        print("Refreshing node cache from routing service...")
-        fetched = nodes.fetch_nodes_from_api()
-        if fetched:
-            print(f"Fetched and cached {len(fetched)} nodes.")
-        else:
-            print("Failed to fetch nodes. Cache not updated.")
-        return
-
     if args.command is None:
         parser.print_help()
         sys.exit(1)
 
-    # Validate network/station constraint
+    # Save provided config to default location
+    if args.config:
+        user_config = Path(args.config)
+        default_config_path = Path.home() / ".config" / "datacenter-change-trigger" / "config.toml"
+        try:
+            if not default_config_path.exists() or user_config.resolve() != default_config_path.resolve():
+                default_config_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(user_config, default_config_path)
+                print(f"Config saved to {default_config_path}")
+        except Exception as e:
+            print(f"Warning: Failed to save config file: {e}", file=sys.stderr)
+
     if args.network == ["*"] and args.station == ["*"]:
         print("Error: You must specify at least --network or --station (not both '*').", file=sys.stderr)
         sys.exit(1)
 
-    # Load or reload nodes
-    if args.reload_nodes:
-        print("Reloading node list from routing service...")
-        node_list = nodes.fetch_nodes_from_api()
-        if not node_list:
-            print("Failed to reload nodes. Using default node list.")
-            node_list = nodes.DEFAULT_NODES
-    else:
-        node_list = nodes.load_nodes()
-
-    # Parse and validate times
     try:
         start_dt = datetime.fromisoformat(args.starttime)
         end_dt = datetime.fromisoformat(args.endtime)
     except ValueError:
-        print("Error: Invalid date format. Use ISO format (e.g. 2025-01-01T00:00:00)", file=sys.stderr)
+        print("Error: Invalid date format. Use ISO 8601 (e.g. 2025-01-01T00:00:00)", file=sys.stderr)
         sys.exit(1)
 
     duration_days = (end_dt - start_dt).days
@@ -84,13 +78,19 @@ def main():
             print("Aborted by user.")
             sys.exit(0)
 
-    # Parse type
     types = [t.strip() for t in args.type.split(",") if t.strip() in ("data", "metadata")]
     if not types:
         print("Error: --type must contain at least one of 'data' or 'metadata'", file=sys.stderr)
         sys.exit(1)
 
-    # Build query parameters
+    try:
+        config = load_config(args.config)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    endpoints = list(config["endpoints"].values())
+
     query_params = {
         "network": args.network,
         "station": args.station,
@@ -101,14 +101,12 @@ def main():
         "type": types,
     }
 
-    # Run query
-    result = query.query_all_nodes_parallel(node_list, query_params)
+    result = query.query_all_nodes_parallel(endpoints, query_params)
 
     if result:
-        full_url, base_url, data = result
-        print(f"\nFound data from: {base_url}")
+        full_url, base_url, _ = result
+        print(f"\nValid response from: {base_url}")
         print(f"Query URL: {full_url}")
-        #print(f"\n{data}")
     else:
-        print("\nNo node returned valid metadata for the given parameters.")
+        print("\nNo valid metadata found at any configured FDSN endpoint.")
         sys.exit(1)

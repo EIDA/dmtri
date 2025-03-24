@@ -1,35 +1,24 @@
 import requests
-import logging
 from urllib.parse import urlencode
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging
 
 FDSN_ENDPOINT = "station/1/query"
 
 def build_station_query_url(base_url: str, params: dict) -> str:
-    """
-    Build a complete FDSN Station query URL from a base and parameter dictionary.
-    """
     query_params = {
+        "starttime": params["starttime"],
+        "endtime": params["endtime"],
         "network": ",".join(params["network"]),
         "station": ",".join(params["station"]),
         "location": ",".join(params["location"]),
         "channel": ",".join(params["channel"]),
-        "level":"response",
         "nodata": 404,
+        "level": "response",
     }
-
-    # Only include time filters if defined
-    if params.get("starttime"):
-        query_params["starttime"] = params["starttime"]
-    if params.get("endtime"):
-        query_params["endtime"] = params["endtime"]
-
     return f"{base_url.rstrip('/')}/{FDSN_ENDPOINT}?{urlencode(query_params)}"
 
 def query_node(base_url: str, params: dict, timeout: int = 10):
-    """
-    Query a single node and return the full query URL, base URL, and response text if successful.
-    """
     full_url = build_station_query_url(base_url, params)
     try:
         response = requests.get(full_url, timeout=timeout)
@@ -41,25 +30,18 @@ def query_node(base_url: str, params: dict, timeout: int = 10):
         logging.debug(f"Request to {base_url} failed: {e}")
     return None
 
-def query_all_nodes_parallel(nodes: list, params: dict):
-    """
-    Query all nodes concurrently and return the first successful response.
-    """
-    logging.info("Querying all nodes in parallel...")
+def query_all_nodes_parallel(endpoints: list[str], params: dict):
+    logging.info("Querying all configured endpoints in parallel...")
 
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {
-            executor.submit(query_node, base_url, params): (name, base_url)
-            for name, base_url, _ in nodes
+            executor.submit(query_node, base_url.rstrip("/") + "/fdsnws", params): base_url
+            for base_url in endpoints
         }
 
         for future in as_completed(futures):
             result = future.result()
             if result:
-                full_url, base_url, data = result
-                name, _ = futures[future]
-                logging.info(f"Valid response from: {name} ({base_url})")
-                return full_url, base_url, data
+                return result  # Return first valid response
 
-    logging.error("No node returned valid metadata.")
     return None
