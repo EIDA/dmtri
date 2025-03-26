@@ -12,9 +12,12 @@ dependencies = [
 ]
 readme = "README.md"
 requires-python = ">=3.8"
-[tool.uv.dev-dependencies]
-pytest = "*"
-pytest-cov = "*"
+[tool.uv]
+dev-dependencies = [
+  "pytest",
+  "pytest-cov"
+]
+
 
 [project.scripts]
 datacenter_change_trigger = "datacenter_change_trigger.cli:main"
