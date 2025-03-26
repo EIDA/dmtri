@@ -19,4 +19,5 @@ jobs:
 
       - name: Run Pytest with Coverage (HTML output only)
         run: |
-          uv run pytest --cov=src --cov-report=html
+          uv run pytest --cov=src
+
