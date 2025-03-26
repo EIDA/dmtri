@@ -1,0 +1,5 @@
+[endpoints]
+NOA = "https://eida.gein.noa.gr"
+GFZ = "https://geofon.gfz.de"
+ODC = "https://orfeus-eu.org"
+RESIF = "https://ws.resif.fr"
