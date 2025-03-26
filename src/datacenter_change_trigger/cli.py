@@ -3,12 +3,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 import shutil
-
+from datacenter_change_trigger.utils import get_version
 from datacenter_change_trigger import query
 from datacenter_change_trigger.config import load_config
 
-VERSION = "0.1.0"
-PROJECT_URL = "https://github.com/EIDA/datacenter-change-trigger"
+
+PROJECT_URL = "https://github.com/EIDA/datacenter-change-trigger/issues"
 
 def main():
     global_options = argparse.ArgumentParser(add_help=False)
@@ -18,7 +18,12 @@ def main():
         description="Trigger data/metadata refresh for multiple EIDA endpoints",
         parents=[global_options]
     )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}\n{PROJECT_URL}")
+    parser.add_argument(
+    "--version",
+    action="version",
+    version=f"%(prog)s version {get_version()} — See {PROJECT_URL} for updates or to report issues."
+)
+
     subparsers = parser.add_subparsers(dest="command")
 
     shared = argparse.ArgumentParser(add_help=False, parents=[global_options])
