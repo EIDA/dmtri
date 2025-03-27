@@ -1,12 +1,16 @@
 import argparse
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-import shutil
-from datacenter_change_trigger.utils import get_version
+
+from datacenter_change_trigger.utils import (
+    get_version,
+    is_all_star,
+    maybe_warn_shell_globbing,
+    validate_and_normalize_args
+)
 from datacenter_change_trigger import query
 from datacenter_change_trigger.config import load_config
-
 
 PROJECT_URL = "https://github.com/EIDA/datacenter-change-trigger/issues"
 
@@ -19,10 +23,10 @@ def main():
         parents=[global_options]
     )
     parser.add_argument(
-    "--version",
-    action="version",
-    version=f"%(prog)s version {get_version()} — See {PROJECT_URL} for updates or to report issues."
-)
+        "--version",
+        action="version",
+        version=f"%(prog)s version {get_version()} — See {PROJECT_URL} for updates or to report issues."
+    )
 
     subparsers = parser.add_subparsers(dest="command")
 
@@ -38,8 +42,10 @@ def main():
                         help="FDSN channel code(s), supports wildcards")
     shared.add_argument("-S", "--starttime", required=True,
                         help="Start time (ISO 8601 format)")
-    shared.add_argument("-E", "--endtime", default=datetime.utcnow().isoformat(),
-                        help="End time (default: now)")
+
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    shared.add_argument("-E", "--endtime", default=now_str,
+                        help="End time (default: now in UTC, formatted without timezone)")
     shared.add_argument("--type", default="data,metadata",
                         help="Comma-separated types to process (data, metadata)")
 
@@ -48,45 +54,8 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command is None:
-        parser.print_help()
-        sys.exit(1)
-
-    # Save provided config to default location
-    if args.config:
-        user_config = Path(args.config)
-        default_config_path = Path.home() / ".config" / "datacenter-change-trigger" / "config.toml"
-        try:
-            if not default_config_path.exists() or user_config.resolve() != default_config_path.resolve():
-                default_config_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy(user_config, default_config_path)
-                print(f"Config saved to {default_config_path}")
-        except Exception as e:
-            print(f"Warning: Failed to save config file: {e}", file=sys.stderr)
-
-    if args.network == ["*"] and args.station == ["*"]:
-        print("Error: You must specify at least --network or --station (not both '*').", file=sys.stderr)
-        sys.exit(1)
-
-    try:
-        start_dt = datetime.fromisoformat(args.starttime)
-        end_dt = datetime.fromisoformat(args.endtime)
-    except ValueError:
-        print("Error: Invalid date format. Use ISO 8601 (e.g. 2025-01-01T00:00:00)", file=sys.stderr)
-        sys.exit(1)
-
-    duration_days = (end_dt - start_dt).days
-    if duration_days > 7:
-        print(f"Warning: You are querying more than 7 days of data ({duration_days} days).")
-        proceed = input("Are you sure you want to continue? (y/N): ").strip().lower()
-        if proceed != "y":
-            print("Aborted by user.")
-            sys.exit(0)
-
-    types = [t.strip() for t in args.type.split(",") if t.strip() in ("data", "metadata")]
-    if not types:
-        print("Error: --type must contain at least one of 'data' or 'metadata'", file=sys.stderr)
-        sys.exit(1)
+    
+    start_dt, end_dt, types = validate_and_normalize_args(args, parser)
 
     try:
         config = load_config(args.config)
@@ -101,9 +70,11 @@ def main():
         "station": args.station,
         "location": args.location,
         "channel": args.channel,
-        "starttime": args.starttime,
-        "endtime": args.endtime,
+        "starttime": start_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+        "endtime": end_dt.strftime("%Y-%m-%dT%H:%M:%S"),
         "type": types,
+        "format": "xml",
+        "level": "response",
     }
 
     result = query.query_all_nodes_parallel(endpoints, query_params)
