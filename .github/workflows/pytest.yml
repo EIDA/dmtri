@@ -18,16 +18,21 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Run Pytest and Generate Coverage Report
+      - name: Run Pytest with Coverage
         run: |
-          uv run pytest --cov=src --cov-report=term --cov-report=xml --cov-report=svg
+          uv run pytest --cov=src --cov-report=term --cov-report=xml
 
-      - name: Move coverage badge to badges directory
+      - name: Generate SVG Coverage Badge
+        uses: tj-actions/coverage-badge-py@v2
+        with:
+          output: coverage.svg
+
+      - name: Move badge to badges/ directory
         run: |
           mkdir -p badges
           mv coverage.svg badges/coverage.svg
 
-      - name: Commit and push coverage badge to main
+      - name: Commit and push badge
         if: github.ref == 'refs/heads/main'
         run: |
           git config --global user.name "github-actions[bot]"
