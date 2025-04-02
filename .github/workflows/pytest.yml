@@ -21,11 +21,12 @@ jobs:
         run: |
           uv run pytest --cov=src --cov-report=json:coverage.json
         
+          
+  
       - name: Generate Coverage Badge
         uses: tj-actions/coverage-badge-py@v2
         with:
-            input: coverage.json
-            output: coverage.svg
+          output: coverage.svg
         
         
         

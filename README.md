@@ -1,6 +1,7 @@
 # datacenter-change-trigger
 
-![coverage](coverage.svg)
+![Coverage](coverage.svg)
+
 
 Trigger metadata and data refresh workflows across EIDA FDSN nodes.
 
