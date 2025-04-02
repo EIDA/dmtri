@@ -1,7 +1,5 @@
 # datacenter-change-trigger
-
-![Coverage](coverage.svg)
-
+[![Run Tests](https://github.com/EIDA/datacenter-change-trigger/actions/workflows/pytest.yml/badge.svg)](https://github.com/EIDA/datacenter-change-trigger/actions/workflows/pytest.yml)
 
 Trigger metadata and data refresh workflows across EIDA FDSN nodes.
 
