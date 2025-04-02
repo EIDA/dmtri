@@ -19,7 +19,7 @@ jobs:
 
       - name: Run Pytest with Coverage 
         run: |
-          uv run pytest --cov=src --cov-report=json:coverage.json
+          uv run pytest --cov=src --cov-report=json:coverage-summary.json
 
       - name: Generate Coverage Badge
         uses: we-cli/coverage-badge-action@v1.0.1
