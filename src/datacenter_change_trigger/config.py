@@ -7,8 +7,8 @@ def load_config(config_path=None):
     path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
 
     if not path.exists():
-        print(f"Warning: Config file not found at {path}. Using default localhost endpoint.")
-        return {"endpoints": {"localhost": "http://localhost"}}
+        print(f"Warning: Config file not found at {path}. Using default .")
+        return {"endpoints": {"NOA" : "https://eida.gein.noa.gr"}}
 
     try:
         with open(path, "rb") as f:

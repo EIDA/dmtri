@@ -1,5 +1,3 @@
 [endpoints]
 RESIF = "https://ws.resif.fr"
 NOA = "https://eida.gein.noa.gr"
-GFZ = "https://geofon.gfz.de"
-ODC = "https://orfeus-eu.org"
