@@ -3,9 +3,9 @@ import tempfile
 from pathlib import Path
 from datacenter_change_trigger import config
 
-def test_missing_config_file_falls_back_to_localhost():
+def test_missing_config_file_falls_back_to_default():
     result = config.load_config("/nonexistent/file.toml")
-    assert result["endpoints"]["localhost"] == "http://localhost"
+    assert result["endpoints"]["NOA"] == "https://eida.gein.noa.gr"
 
 def test_invalid_toml_raises_value_error(tmp_path):
     bad_file = tmp_path / "bad.toml"
