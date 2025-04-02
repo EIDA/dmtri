@@ -1,6 +1,7 @@
 # datacenter-change-trigger
 
-+ [![cov](https://EIDA.github.io/datacenter-change-trigger/badges/coverage.svg)](https://github.com/EIDA/datacenter-change-trigger/actions)
+![coverage](coverage.svg)
+
 Trigger metadata and data refresh workflows across EIDA FDSN nodes.
 
 
