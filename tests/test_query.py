@@ -28,7 +28,7 @@ def test_query_node_success_returns_data():
     mock_response.status_code = 200
     mock_response.text = "metadata result"
 
-    with patch("datacenter_change_trigger.query.requests.get", return_value=mock_response):
+    with patch("dmtri.query.requests.get", return_value=mock_response):
         result = query_node("https://ws.resif.fr/fdsnws", {
             "network": ["FR"],
             "station": ["CIEL"],
@@ -47,7 +47,7 @@ def test_query_node_404_returns_none():
     mock_response.status_code = 404
     mock_response.text = ""
 
-    with patch("datacenter_change_trigger.query.requests.get", return_value=mock_response):
+    with patch("dmtri.query.requests.get", return_value=mock_response):
         result = query_node("https://ws.resif.fr/fdsnws", {
             "network": ["FR"],
             "station": ["CIEL"],
@@ -62,7 +62,7 @@ def test_query_node_404_returns_none():
 
 
 def test_query_node_raises_exception_returns_none():
-    with patch("datacenter_change_trigger.query.requests.get", side_effect=RequestException("Network error")):
+    with patch("dmtri.query.requests.get", side_effect=RequestException("Network error")):
         result = query_node("https://ws.resif.fr/fdsnws", {
             "network": ["FR"],
             "station": ["CIEL"],
@@ -75,7 +75,7 @@ def test_query_node_raises_exception_returns_none():
         assert result is None
 
 
-@patch("datacenter_change_trigger.query.query_node")
+@patch("dmtri.query.query_node")
 def test_query_all_nodes_returns_first_success(mock_query_node):
     def side_effect(url, params):
         if "good-node" in url:
@@ -105,7 +105,7 @@ def test_query_all_nodes_returns_first_success(mock_query_node):
 
     assert result is not None
     assert "good-node" in result[0]
-@patch("datacenter_change_trigger.query.query_node", return_value=None)
+@patch("dmtri.query.query_node", return_value=None)
 def test_query_all_nodes_returns_none_if_all_fail(mock_query_node):
     endpoints = [
         "https://bad-node1",
@@ -127,7 +127,7 @@ def test_query_all_nodes_returns_none_if_all_fail(mock_query_node):
 
     assert result is None
     assert mock_query_node.call_count == len(endpoints)
-@patch("datacenter_change_trigger.query.requests.get")
+@patch("dmtri.query.requests.get")
 def test_query_logs_bad_response_with_content(mock_get, caplog):
     # Simulate 500 response with some body
     mock_response = Mock()
