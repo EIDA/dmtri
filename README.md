@@ -24,9 +24,9 @@ uv sync
 Run the CLI:
 
 ```bash
-uv run dmtri refresh \\
-  --network FR \\
-  --station CIEL \\
+uv run dmtri refresh \
+  --network FR \
+  --station CIEL \
   --starttime 2025-01-01T00:00:00
 ```
 
