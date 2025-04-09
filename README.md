@@ -1,5 +1,5 @@
 # dmtri
-[![Run Tests](https://github.com/EIDA/datacenter-change-trigger/actions/workflows/pytest.yml/badge.svg)](https://github.com/EIDA/datacenter-change-trigger/actions/workflows/pytest.yml)
+[![Run Tests](https://github.com/EIDA/dmtri/actions/workflows/pytest.yml/badge.svg)](https://github.com/EIDA/dmtri/actions/workflows/pytest.yml)
 ![Coverage](badges/coverage.svg)
 
 
@@ -11,8 +11,8 @@ Trigger metadata and data refresh workflows across EIDA FDSN nodes.
 Clone the repository:
 
 ```bash
-git clone https://github.com/EIDA/datacenter-change-trigger.git
-cd datacenter-change-trigger
+git clone https://github.com/EIDA/dmtri.git
+cd dmtri
 ```
 
 Set up the environment:
@@ -24,7 +24,7 @@ uv sync
 Run the CLI:
 
 ```bash
-uv run datacenter_change_trigger refresh \\
+uv run dmtri refresh \\
   --network FR \\
   --station CIEL \\
   --starttime 2025-01-01T00:00:00
@@ -38,7 +38,7 @@ Make sure you have [uv](https://github.com/astral-sh/uv) installed.
 Create a configuration file in:
 
 ```
-~/.config/datacenter-change-trigger/config.toml
+~/.config/dmtri/config.toml
 ```
 
 Example:
@@ -56,7 +56,7 @@ ODC = "https://orfeus-eu.org"
 Run the CLI using:
 
 ```bash
-uv run datacenter_change_trigger refresh \
+uv run dmtri refresh \
   --network FR \
   --station CIEL \
   --starttime 2025-01-01T00:00:00

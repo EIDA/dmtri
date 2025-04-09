@@ -1,7 +1,7 @@
 import tomli
 from pathlib import Path
 
-DEFAULT_CONFIG_PATH = Path.home() / ".config" / "datacenter-change-trigger" / "config.toml"
+DEFAULT_CONFIG_PATH = Path.home() / ".config" / "dmtri" / "config.toml"
 
 def load_config(config_path=None):
     path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
