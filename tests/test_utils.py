@@ -40,7 +40,7 @@ name = "dmtri"
 version = "9.9.9"
 """)
 
-    # Simulate file structure: project/src/datacenter_change_trigger/utils.py
+    
     fake_utils_path = project_root / "src" / "dmtri" / "utils.py"
     fake_utils_path.parent.mkdir(parents=True, exist_ok=True)
     fake_utils_path.write_text("# mock utils.py file")
