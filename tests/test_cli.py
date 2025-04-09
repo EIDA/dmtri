@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import pytest
 from unittest.mock import patch
-from datacenter_change_trigger import cli
+from dmtri import cli
 
 def test_cli_version_flag(capsys):
     with pytest.raises(SystemExit):

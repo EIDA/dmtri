@@ -1,9 +1,9 @@
-from datacenter_change_trigger.query import build_station_query_url
+from dmtri.query import build_station_query_url
 import pytest
 from unittest.mock import patch, MagicMock , Mock
-from datacenter_change_trigger.query import query_node, build_station_query_url
+from dmtri.query import query_node, build_station_query_url
 from requests.exceptions import RequestException
-from datacenter_change_trigger import query
+from dmtri import query
 def test_build_station_query_url():
     base_url = " https://ws.resif.fr/fdsnws"
     params = {

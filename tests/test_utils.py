@@ -1,5 +1,5 @@
 import pytest
-from datacenter_change_trigger.utils import parse_date_string, get_version,maybe_warn_shell_globbing,validate_datetime_range
+from dmtri.utils import parse_date_string, get_version,maybe_warn_shell_globbing,validate_datetime_range
 from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 

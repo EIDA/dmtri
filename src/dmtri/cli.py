@@ -3,16 +3,14 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from datacenter_change_trigger.utils import (
+from dmtri.utils import (
     get_version,
-    is_all_star,
-    maybe_warn_shell_globbing,
     validate_and_normalize_args
 )
-from datacenter_change_trigger import query
-from datacenter_change_trigger.config import load_config
+from dmtri import query
+from dmtri.config import load_config
 
-PROJECT_URL = "https://github.com/EIDA/datacenter-change-trigger/issues"
+PROJECT_URL = "https://github.com/EIDA/dmtri/issues"
 
 def main():
     global_options = argparse.ArgumentParser(add_help=False)

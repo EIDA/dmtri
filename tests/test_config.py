@@ -1,7 +1,7 @@
 import pytest
 import tempfile
 from pathlib import Path
-from datacenter_change_trigger import config
+from dmtri import config
 
 def test_missing_config_file_falls_back_to_default():
     result = config.load_config("/nonexistent/file.toml")
