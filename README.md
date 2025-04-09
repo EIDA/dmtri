@@ -1,4 +1,4 @@
-# datacenter-change-trigger
+# dmtri
 [![Run Tests](https://github.com/EIDA/datacenter-change-trigger/actions/workflows/pytest.yml/badge.svg)](https://github.com/EIDA/datacenter-change-trigger/actions/workflows/pytest.yml)
 ![Coverage](badges/coverage.svg)
 
