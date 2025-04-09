@@ -36,17 +36,17 @@ def test_get_version_reads_toml(monkeypatch, tmp_path):
     pyproject_path.parent.mkdir(parents=True, exist_ok=True)
     pyproject_path.write_text("""
 [project]
-name = "datacenter-change-trigger"
+name = "dmtri"
 version = "9.9.9"
 """)
 
     # Simulate file structure: project/src/datacenter_change_trigger/utils.py
-    fake_utils_path = project_root / "src" / "datacenter_change_trigger" / "utils.py"
+    fake_utils_path = project_root / "src" / "dmtri" / "utils.py"
     fake_utils_path.parent.mkdir(parents=True, exist_ok=True)
     fake_utils_path.write_text("# mock utils.py file")
 
     # Patch __file__ to simulate we're inside the real package
-    monkeypatch.setattr("datacenter_change_trigger.utils.__file__", str(fake_utils_path))
+    monkeypatch.setattr("dmtri.utils.__file__", str(fake_utils_path))
 
     assert get_version() == "9.9.9"
 
