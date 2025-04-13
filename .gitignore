@@ -21,3 +21,4 @@ uv.lock
 # Editable installs
 src/*.egg-info/
 
+playbooks/artifacts/

@@ -120,11 +120,11 @@ def validate_and_normalize_args(args, parser):
         sys.exit(1)
 
     maybe_warn_shell_globbing(args)
-    check_wildcard_constraints(args)
+    #check_wildcard_constraints(args)
     maybe_copy_config(args)
 
     start_dt, end_dt = parse_datetime_args(args)
-    validate_datetime_range(start_dt, end_dt)
+    #validate_datetime_range(start_dt, end_dt)
     types = validate_types(args)
 
     return start_dt, end_dt, types

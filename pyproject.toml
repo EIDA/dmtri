@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "CLI tool for triggering datacenter metadata updates"
 authors = [{ name = "Nikos Sokos", email = "nsokos@noa.com" }]
 dependencies = [
+    "ansible>=6.7.0",
+    "ansible-runner>=2.3.6",
     "appdirs>=1.4.4",
     "pytest>=8.3.5",
     "pytest-cov>=5.0.0",

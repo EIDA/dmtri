@@ -2,12 +2,13 @@ import argparse
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-
+import subprocess
+from dmtri.execution_plan import print_execution_plan
 from dmtri.utils import (
     get_version,
     validate_and_normalize_args
 )
-from dmtri import query
+from dmtri.hooks.echo import run_hook
 from dmtri.config import load_config
 
 PROJECT_URL = "https://github.com/EIDA/dmtri/issues"
@@ -52,7 +53,6 @@ def main():
 
     args = parser.parse_args()
 
-    
     start_dt, end_dt, types = validate_and_normalize_args(args, parser)
 
     try:
@@ -63,24 +63,25 @@ def main():
 
     endpoints = list(config["endpoints"].values())
 
-    query_params = {
+    vars_to_pass = {
         "network": args.network,
         "station": args.station,
         "location": args.location,
         "channel": args.channel,
-        "starttime": start_dt.strftime("%Y-%m-%dT%H:%M:%S"),
-        "endtime": end_dt.strftime("%Y-%m-%dT%H:%M:%S"),
-        "type": types,
-        "format": "xml",
-        "level": "response",
+        "starttime": args.starttime,
+        "endtime": args.endtime,
+        "type": args.type,
     }
 
-    result = query.query_all_nodes_parallel(endpoints, query_params)
+    print_execution_plan(args.command, vars_to_pass,"playbooks/echo.yml")
+    run_hook("echo.yml", vars_to_pass)
 
-    if result:
-        full_url, base_url, _ = result
-        print(f"\nValid response from: {base_url}")
-        print(f"Query URL: {full_url}")
-    else:
-        print("\nNo valid metadata found at any configured FDSN endpoint.")
-        sys.exit(1)
+    # # Previously: run query logic
+    # result = query.query_all_nodes_parallel(endpoints, query_params)
+    # if result:
+    #     full_url, base_url, _ = result
+    #     print(f"\nValid response from: {base_url}")
+    #     print(f"Query URL: {full_url}")
+    # else:
+    #     print("\nNo valid metadata found at any configured FDSN endpoint.")
+    #     sys.exit(1)
