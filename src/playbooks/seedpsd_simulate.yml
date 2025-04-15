@@ -1,0 +1,29 @@
+- name: Run seedpsd data load in simulate mode
+  hosts: seedpsd_nodes
+  gather_facts: false
+  vars:
+    description: "Runs seedpsd-cli data load in simulation mode"
+  tasks:
+    - name: Run seedpsd data load with simulate flag
+      ansible.builtin.shell: >
+        cd /home/qc/seedpsd && \
+        uv run seedpsd-cli data load
+        --simulate
+        {% if network is defined %} --network "{{ network }}" {% endif %}
+        {% if station is defined %} --station "{{ station }}" {% endif %}
+        {% if location is defined %} --location "{{ location }}" {% endif %}
+        {% if channel is defined %} --channel "{{ channel }}" {% endif %}
+      args:
+        executable: /bin/bash
+      register: seedpsd_result
+
+    - name: Save output to log file on remote host
+      copy:
+        content: "{{ seedpsd_result.stdout }}"
+        dest: "/tmp/seedpsd_output.log"
+
+    - name: Fetch log file from remote to local
+      fetch:
+        src: /tmp/seedpsd_output.log
+        dest: logs/
+        flat: yes
