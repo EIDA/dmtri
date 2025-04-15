@@ -22,3 +22,6 @@ uv.lock
 src/*.egg-info/
 
 **/artifacts/
+
+*.ini
+*.env
