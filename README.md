@@ -1,81 +1,107 @@
 # dmtri
+
 [![Run Tests](https://github.com/EIDA/dmtri/actions/workflows/pytest.yml/badge.svg)](https://github.com/EIDA/dmtri/actions/workflows/pytest.yml)
 ![Coverage](badges/coverage.svg)
 
+`dmtri` is a command-line tool designed to trigger metadata and data refresh simulations across EIDA FDSN nodes using Ansible automation.
 
-Trigger metadata and data refresh workflows across EIDA FDSN nodes.
-
+---
 
 ## Installation
 
-Clone the repository:
+Clone the repository and set up the environment:
 
 ```bash
 git clone https://github.com/EIDA/dmtri.git
 cd dmtri
-```
-
-Set up the environment:
-
-```bash
 uv sync
 ```
 
-Run the CLI:
+---
+
+## CLI Usage
 
 ```bash
-uv run dmtri refresh \
-  --network FR \
-  --station CIEL \
-  --starttime 2025-01-01T00:00:00
+uv run dmtri [command] [options]
 ```
 
-Make sure you have [uv](https://github.com/astral-sh/uv) installed.
+### Commands
 
+- `refresh`: Run a non-destructive seedpsd data/metadata refresh simulation
+- `clean`: Simulate cleaning of outdated data/metadata
 
-## Configuration
+### Required Parameters
 
-Create a configuration file in:
+- `--starttime <timestamp>`  
+  Start of the time range (ISO 8601 format, e.g., `2025-01-01T00:00:00`)
 
-```
-~/.config/dmtri/config.toml
-```
+### Optional Parameters
 
-Example:
+- `--endtime <timestamp>`  
+  End of the time range (default: current UTC time)
 
-```toml
-[endpoints]
-NOA = "https://eida.gein.noa.gr"
-GFZ = "https://geofon.gfz.de"
-ODC = "https://orfeus-eu.org"
-```
+- `--network <codes>`  
+  One or more FDSN network codes. Wildcards supported. Default: `"*"`
 
+- `--station <codes>`  
+  One or more FDSN station codes. Wildcards supported. Default: `"*"`
 
-## Usage
+- `--location <codes>`  
+  One or more FDSN location codes. Wildcards supported. Default: `"*"`
 
-Run the CLI using:
+- `--channel <codes>`  
+  One or more FDSN channel codes. Wildcards supported. Default: `"*"`
+
+- `--type <data,metadata>`  
+  Comma-separated values. Valid values: `data`, `metadata` (default: both)
+
+- `--no-confirm`  
+  Skips the confirmation prompt before running the playbook
+
+---
+
+## Examples
+
+Refresh metadata and data for a specific station:
 
 ```bash
-uv run dmtri refresh \
-  --network FR \
-  --station CIEL \
-  --starttime 2025-01-01T00:00:00
+uv run dmtri refresh   --network HL   --station ATH   --starttime 2025-01-01T00:00:00   --endtime 2025-01-05T00:00:00
 ```
 
-Optional:
+Clean data older than a given date:
 
 ```bash
---endtime 2025-01-10T00:00:00
---type data,metadata
---config ./config.toml  # optional override
+uv run dmtri clean   --network HL   --station ATH   --starttime 2025-01-01T00:00:00
 ```
 
-You must provide at least one of `--network` or `--station`.
+Suppress the execution plan confirmation:
+
+```bash
+uv run dmtri refresh --no-confirm ...
+```
+
+---
+
+## Validation
+
+The tool enforces several rules before execution:
+
+- `--starttime` must be provided
+- The time range cannot exceed 7 days without confirmation
+- `--type` must include at least one valid value (`data`, `metadata`)
+
+---
 
 ## Development
 
-Run tests:
+Run the CLI locally:
 
 ```bash
-uv run pytest
+uv run dmtri --help
+```
+
+Run the test suite:
+
+```bash
+uv run pytest --cov=dmtri --cov-report=term-missing
 ```

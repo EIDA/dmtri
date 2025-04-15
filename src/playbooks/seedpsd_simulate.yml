@@ -16,14 +16,14 @@
       args:
         executable: /bin/bash
       register: seedpsd_result
+      ignore_errors: false
 
-    - name: Save output to log file on remote host
-      copy:
-        content: "{{ seedpsd_result.stdout }}"
-        dest: "/tmp/seedpsd_output.log"
+    - name: Show seedpsd-cli output
+      ansible.builtin.debug:
+        var: seedpsd_result.stdout_lines
+      when: seedpsd_result.rc == 0
 
-    - name: Fetch log file from remote to local
-      fetch:
-        src: /tmp/seedpsd_output.log
-        dest: logs/
-        flat: yes
+    - name: Confirm simulation completed
+      ansible.builtin.debug:
+        msg: "seedpsd-cli simulation completed successfully on {{ inventory_hostname }}"
+      when: seedpsd_result.rc == 0
