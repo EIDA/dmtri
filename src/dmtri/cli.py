@@ -40,24 +40,38 @@ def main():
     shared.add_argument("--type", default="data,metadata", help="Comma-separated types to process (data, metadata)")
     shared.add_argument("--no-confirm", action="store_true", help="Skip confirmation prompt before executing")
 
+    # Add refresh and clean
     subparsers.add_parser("refresh", parents=[shared], help="Refresh data/metadata")
     subparsers.add_parser("clean", parents=[shared], help="Clean outdated data/metadata")
-    
+
+    # Add doctor command
+    doctor_parser = subparsers.add_parser("doctor", help="Check SSH connectivity to all inventory hosts")
+    doctor_parser.add_argument("-v", "--verbose", action="store_true", help="Show full Ansible output per host")
+
     args = parser.parse_args()
 
-    start_dt, end_dt, types = validate_and_normalize_args(args, parser)
+    if args.command == "doctor":
+        from dmtri.doctor import run_diagnostics
+        return run_diagnostics(verbose=args.verbose)
 
-    vars_to_pass = {
-        "network": args.network,
-        "station": args.station,
-        "location": args.location,
-        "channel": args.channel,
-        "starttime": args.starttime,
-        "endtime": args.endtime,
-        "type": [t.strip() for t in args.type.split(",")],
-    }
+    elif args.command in ("refresh", "clean"):
+        start_dt, end_dt, types = validate_and_normalize_args(args, parser)
 
-    if not args.no_confirm:
-        print_execution_plan(args.command, vars_to_pass, PLAYBOOK_SEEDPSD)
+        vars_to_pass = {
+            "network": args.network,
+            "station": args.station,
+            "location": args.location,
+            "channel": args.channel,
+            "starttime": args.starttime,
+            "endtime": args.endtime,
+            "type": [t.strip() for t in args.type.split(",")],
+        }
 
-    run_hook(PLAYBOOK_SEEDPSD, vars_to_pass)
+        if not args.no_confirm:
+            print_execution_plan(args.command, vars_to_pass, PLAYBOOK_SEEDPSD)
+
+        run_hook(PLAYBOOK_SEEDPSD, vars_to_pass)
+
+    else:
+        parser.print_help()
+        sys.exit(1)

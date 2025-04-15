@@ -4,6 +4,7 @@ from unittest.mock import patch
 from dmtri import cli
 
 
+
 def test_cli_version_flag(capsys):
     with pytest.raises(SystemExit):
         with patch("sys.argv", ["dmtri", "--version"]):
@@ -110,3 +111,15 @@ def test_cli_user_aborts_on_long_range(mock_input, capsys):
 
     out = capsys.readouterr().out
     assert "aborted by user" in out.lower()
+
+@patch("dmtri.doctor.run_diagnostics")
+def test_cli_doctor_runs(mock_run):
+    with patch("sys.argv", ["dmtri", "doctor"]):
+        cli.main()
+        mock_run.assert_called_once_with(verbose=False)
+
+@patch("dmtri.doctor.run_diagnostics")
+def test_cli_doctor_verbose(mock_run):
+    with patch("sys.argv", ["dmtri", "doctor", "--verbose"]):
+        cli.main()
+        mock_run.assert_called_once_with(verbose=True)
