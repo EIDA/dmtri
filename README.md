@@ -1,3 +1,4 @@
+
 # dmtri
 
 [![Run Tests](https://github.com/EIDA/dmtri/actions/workflows/pytest.yml/badge.svg)](https://github.com/EIDA/dmtri/actions/workflows/pytest.yml)
@@ -105,3 +106,31 @@ Run the test suite:
 ```bash
 uv run pytest --cov=dmtri --cov-report=term-missing
 ```
+
+---
+
+## Troubleshooting with `dmtri doctor`
+
+Check SSH connectivity to your configured seedpsd hosts using:
+
+```bash
+uv run dmtri doctor
+```
+
+This uses the Ansible `ping` module to test SSH access to all servers listed in your inventory.
+
+### Options
+
+- `--verbose` — Show full output from each host
+
+### Example
+
+```bash
+uv run dmtri doctor --verbose
+```
+
+If no response is received, ensure:
+
+- You're connected to the VPN (if applicable)
+- SSH access is configured correctly in your inventory file
+- Host IPs and credentials are reachable and valid
