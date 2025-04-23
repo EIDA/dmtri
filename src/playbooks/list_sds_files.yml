@@ -1,0 +1,63 @@
+- name: Find SDS files and run seedpsd-cli with list
+  hosts: seedpsd_nodes
+  gather_facts: false
+  vars:
+    description: "Finds SDS files and processes them via seedpsd-cli using --list"
+  tasks:
+
+    - name: Extract start and end years
+      set_fact:
+        start_year: "{{ starttime.split('-')[0] | int }}"
+        end_year: "{{ endtime.split('-')[0] | int }}"
+        file_suffix: "{{ 'D' if 'data' in type else 'M' }}"
+
+    - name: Set list of years to search
+      set_fact:
+        year_range: "{{ range(start_year | int, (end_year | int) + 1) | list }}"
+
+    - name: Set default wildcards if not provided
+      set_fact:
+        network: "{{ network | default('*') }}"
+        station: "{{ station | default('*') }}"
+        location: "{{ location | default('*') }}"
+        channel: "{{ channel | default('*') }}"
+
+    - name: Find matching SDS files and save to temporary list file
+      shell: >
+        find iso_sds/{{ item }}/{{ network }}/{{ station }}/*.{{ file_suffix }} -type f
+        -newermt "{{ starttime }}" ! -newermt "{{ endtime }}"
+      loop: "{{ year_range }}"
+      register: find_results
+      changed_when: false
+      ignore_errors: true
+
+    - name: Collect all found files
+      set_fact:
+        all_files: >-
+          {{ find_results.results
+            | map(attribute='stdout_lines')
+            | flatten
+            | list
+          }}
+
+    - name: Write all found files to /tmp/matched_files.txt
+      copy:
+        content: "{{ all_files | join('\n') }}"
+        dest: /tmp/matched_files.txt
+
+    - name: Show count of matched files
+      debug:
+        msg: "Total matched files: {{ all_files | length }}"
+
+    - name: Run seedpsd-cli data mseed using the file list
+      shell: >
+        cd /home/qc/seedpsd &&
+        uv run seedpsd-cli data mseed --simulate --list /tmp/matched_files.txt
+      args:
+        executable: /bin/bash
+      register: seedpsd_result
+      ignore_errors: false
+
+    - name: Show seedpsd-cli output
+      debug:
+        var: seedpsd_result.stdout_lines

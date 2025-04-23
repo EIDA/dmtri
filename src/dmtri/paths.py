@@ -9,7 +9,7 @@ PLAYBOOKS_DIR = SRC_DIR / "playbooks"
 INVENTORY_DIR = SRC_DIR / "inventory"        
 
 # Specific playbooks
-PLAYBOOK_SEEDPSD = PLAYBOOKS_DIR / "seedpsd_simulate.yml"
+PLAYBOOK_SEEDPSD = PLAYBOOKS_DIR / "list_sds_files.yml"
 PLAYBOOK_REFRESH = PLAYBOOKS_DIR / "refresh.yml"
 PLAYBOOK_ECHO = PLAYBOOKS_DIR / "echo.yml"
 PLAYBOOK_CLEAN = PLAYBOOKS_DIR / "clean.yml"
