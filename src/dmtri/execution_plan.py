@@ -3,31 +3,26 @@ import yaml
 from pathlib import Path
 
 
-def get_playbook_metadata(playbook_path: Path) -> dict:
-    """
-    Load metadata from an Ansible playbook.
-    Extracts hosts, task names, and description (if defined in vars).
-    """
-    try:
-        with open(playbook_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+def get_playbook_metadata(playbook_path: str):
+    
 
-        if not isinstance(data, list) or not data:
-            return {"error": "Playbook is empty or malformed"}
+    with open(playbook_path) as f:
+        playbook = yaml.safe_load(f)
 
-        play = data[0]  # only read first play
+    metadata = {
+        "hosts": playbook[0].get("hosts", "unknown"),
+        "description": playbook[0].get("vars", {}).get("description", ""),
+        "tasks": []
+    }
 
-        meta = {
-            "hosts": play.get("hosts", "unspecified"),
-            "tasks": [task.get("name", "Unnamed task") for task in play.get("tasks", [])],
-            "description": play.get("vars", {}).get("description", "No description provided.")
-        }
+    for task in playbook[0]["tasks"]:
+        desc = task.get("vars", {}).get("description", task.get("name", "Unnamed Task"))
+        metadata["tasks"].append(desc)
 
-        return meta
+    return metadata
 
-    except Exception as e:
-        return {"error": f"Failed to parse playbook: {e}"}
 
+    
 
 def print_execution_plan(command: str, variables: dict, playbook_path: str):
     metadata = get_playbook_metadata(playbook_path)
@@ -36,16 +31,20 @@ def print_execution_plan(command: str, variables: dict, playbook_path: str):
     print("-" * 40)
     print(f"Command     : {command}")
     print(f"Playbook    : {playbook_path}")
+
     if "error" in metadata:
-        print(f" Warning  : {metadata['error']}")
+        print(f"Warning     : {metadata['error']}")
     else:
         print(f"Hosts       : {metadata['hosts']}")
-        print(f"Tasks       : {metadata['tasks']}")
         print(f"Description : {metadata['description']}")
+        print("Steps       :")
+        for idx, desc in enumerate(metadata['tasks'], start=1):
+            print(f"  {idx}. {desc}")
 
-    print("\nVariables:")
-    for k, v in variables.items():
-        print(f"  {k:10}: {v}")
+    if variables:
+        print("\nVariables:")
+        for k, v in variables.items():
+            print(f"  {k:10}: {v}")
 
     confirm = input("\nProceed with this execution plan? [y/N]: ").strip().lower()
     if confirm != "y":

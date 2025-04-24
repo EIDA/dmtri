@@ -6,16 +6,22 @@
   tasks:
 
     - name: Extract start and end years
+      vars:
+        description: "Extract year range from starttime and endtime"
       set_fact:
         start_year: "{{ starttime.split('-')[0] | int }}"
         end_year: "{{ endtime.split('-')[0] | int }}"
         file_suffix: "{{ 'D' if 'data' in type else 'M' }}"
 
     - name: Set list of years to search
+      vars:
+        description: "Generate a list of years to scan for files"
       set_fact:
         year_range: "{{ range(start_year | int, (end_year | int) + 1) | list }}"
 
     - name: Set default wildcards if not provided
+      vars:
+        description: "Apply default wildcards for network, station, location, channel"
       set_fact:
         network: "{{ network | default('*') }}"
         station: "{{ station | default('*') }}"
@@ -23,6 +29,8 @@
         channel: "{{ channel | default('*') }}"
 
     - name: Find matching SDS files and save to temporary list file
+      vars:
+        description: "Search for SDS files matching criteria within date range"
       shell: >
         find iso_sds/{{ item }}/{{ network }}/{{ station }}/*.{{ file_suffix }} -type f
         -newermt "{{ starttime }}" ! -newermt "{{ endtime }}"
@@ -32,6 +40,8 @@
       ignore_errors: true
 
     - name: Collect all found files
+      vars:
+        description: "Aggregate results from SDS file search"
       set_fact:
         all_files: >-
           {{ find_results.results
@@ -41,15 +51,21 @@
           }}
 
     - name: Write all found files to /tmp/matched_files.txt
+      vars:
+        description: "Write the list of matched files to a temp file"
       copy:
         content: "{{ all_files | join('\n') }}"
         dest: /tmp/matched_files.txt
 
     - name: Show count of matched files
+      vars:
+        description: "Print how many files were found"
       debug:
         msg: "Total matched files: {{ all_files | length }}"
 
     - name: Run seedpsd-cli data mseed using the file list
+      vars:
+        description: "Run seedpsd-cli with --simulate and file list"
       shell: >
         cd /home/qc/seedpsd &&
         uv run seedpsd-cli data mseed --simulate --list /tmp/matched_files.txt
@@ -59,5 +75,7 @@
       ignore_errors: false
 
     - name: Show seedpsd-cli output
+      vars:
+        description: "Display the output of seedpsd-cli"
       debug:
         var: seedpsd_result.stdout_lines
