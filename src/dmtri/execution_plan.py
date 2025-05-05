@@ -4,28 +4,35 @@ from pathlib import Path
 
 
 def get_playbook_metadata(playbook_path: str):
+    try:
+        with open(playbook_path) as f:
+            playbook = yaml.safe_load(f)
+
+        if not playbook or not isinstance(playbook, list) or not playbook[0]:
+            return {"error": "Empty playbook"}
+
+        metadata = {
+            "hosts": playbook[0].get("hosts", "unknown"),
+            "description": playbook[0].get("vars", {}).get("description", ""),
+            "tasks": []
+        }
+
+        for task in playbook[0].get("tasks", []):
+            desc = task.get("vars", {}).get("description", task.get("name", "Unnamed Task"))
+            metadata["tasks"].append(desc)
+
+        return metadata
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+
     
 
-    with open(playbook_path) as f:
-        playbook = yaml.safe_load(f)
-
-    metadata = {
-        "hosts": playbook[0].get("hosts", "unknown"),
-        "description": playbook[0].get("vars", {}).get("description", ""),
-        "tasks": []
-    }
-
-    for task in playbook[0]["tasks"]:
-        desc = task.get("vars", {}).get("description", task.get("name", "Unnamed Task"))
-        metadata["tasks"].append(desc)
-
-    return metadata
-
-
-    
-
-def print_execution_plan(command: str, variables: dict, playbook_path: str):
-    metadata = get_playbook_metadata(playbook_path)
+def print_execution_plan(command: str, variables: dict, playbook_path: str, metadata=None):
+    if metadata is None:
+        metadata = get_playbook_metadata(playbook_path)
 
     print("\nExecution Plan")
     print("-" * 40)

@@ -1,0 +1,106 @@
+---
+- name: Find SDS files and run WFCatalogCollector using venv
+  hosts: wf_catalogue
+  gather_facts: false
+
+  tasks:
+
+    - name: Extract start and end years
+      set_fact:
+        start_year: "{{ starttime.split('-')[0] | int }}"
+        end_year: "{{ endtime.split('-')[0] | int }}"
+        file_suffix: "{{ 'D' if 'data' in type | default('data') else 'M' }}"
+        log_name: "WFCatalog-{{ starttime }}-{{ endtime }}.log"
+
+    - name: Generate list of years to scan
+      set_fact:
+        year_range: "{{ range(start_year | int, (end_year | int) + 1) | list }}"
+
+    - name: Set default wildcard values
+      set_fact:
+        network: "{{ network | default('*') }}"
+        station: "{{ station | default('*') }}"
+        location: "{{ location | default('*') }}"
+        channel: "{{ channel | default('*') }}"
+
+    - name: Find matching SDS files in archive
+      shell: >
+        find iso_sds/{{ item }}/{{ network }}/{{ station }}/*.{{ file_suffix }}
+        -type f -newermt "{{ starttime }}" ! -newermt "{{ endtime }}"
+      loop: "{{ year_range }}"
+      register: find_results
+      changed_when: false
+      ignore_errors: true
+
+    - name: Aggregate all found SDS files
+      set_fact:
+        all_files: "{{ find_results.results | map(attribute='stdout_lines') | flatten | list }}"
+
+    - name: Show number of matched files
+      debug:
+        msg: "Total matched SDS files: {{ all_files | length }}"
+
+    - name: Find WFCatalogCollector.py path
+      shell: find /home/sysop -type f -name WFCatalogCollector.py | head -n 1
+      register: collector_find
+      changed_when: false
+
+    - name: Fail if collector script was not found
+      fail:
+        msg: "WFCatalogCollector.py not found on remote host"
+      when: collector_find.stdout == ""
+
+    - name: Set collector paths
+      set_fact:
+        collector_dir: "{{ collector_find.stdout | dirname }}"
+        collector_script: "{{ collector_find.stdout | basename }}"
+        test_config_path: "/tmp/config.test.json"
+        log_path: "{{ collector_find.stdout | dirname }}/log/{{ log_name }}"
+        venv_python: "{{ collector_find.stdout | dirname }}/.env/bin/python3.11"
+
+    - name: Write test config.json (Mongo disabled)
+      copy:
+        dest: "{{ test_config_path }}"
+        content: |
+          {
+            "VERSION": "test",
+            "ARCHIVE": "Test",
+            "PUBLISHER": "Test",
+            "STRUCTURE": "SDS",
+            "MONGO": {
+              "ENABLED": false,
+              "DB_HOST": "localhost",
+              "DB_PORT": 27017,
+              "DB_NAME": "test",
+              "DB_USER": "user",
+              "DB_PASS": "pass",
+              "ALLOW_DOUBLE": false
+            },
+            "ARCHIVE_ROOT": "/dev/null",
+            "DEFAULT_LOG_FILE": "{{ log_path }}",
+            "PROCESSING_TIMEOUT": 60,
+            "ENABLE_DUBLIN_CORE": false,
+            "FILTERS": {
+              "WHITE": ["*"],
+              "BLACK": []
+            }
+          }
+
+    - name: Convert SDS file list to JSON string
+      set_fact:
+        all_files_json: "{{ all_files | to_json }}"
+
+    - name: Run WFCatalogCollector using venv and log output
+      shell: >
+        cd {{ collector_dir }} &&
+        WF_CONFIG_PATH={{ test_config_path }} {{ venv_python }} {{ collector_script }}
+        --list '{{ all_files_json }}' --flags --csegs --stdout --update --logfile '{{ log_path }}'
+      args:
+        executable: /bin/bash
+      register: wfcatalog_output
+      when: all_files | length > 0
+
+    - name: Show WFCatalogCollector output (truncated)
+      debug:
+        var: wfcatalog_output.stdout_lines
+      when: wfcatalog_output is defined

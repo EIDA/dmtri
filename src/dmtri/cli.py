@@ -6,18 +6,19 @@ import logging
 from dmtri.execution_plan import print_execution_plan
 from dmtri.utils import get_version, validate_and_normalize_args
 from dmtri.hooks.hooks import run_hook
-from dmtri.paths import PLAYBOOK_SEEDPSD
+from dmtri.paths import COMMAND_PLAYBOOKS
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 PROJECT_URL = "https://github.com/EIDA/dmtri/issues"
 
+
 def main():
     global_options = argparse.ArgumentParser(add_help=False)
 
     parser = argparse.ArgumentParser(
-        description="Trigger data/metadata refresh for multiple EIDA endpoints",
+        description="Trigger data/metadata refresh or cleaning for multiple EIDA endpoints.",
         parents=[global_options]
     )
     parser.add_argument(
@@ -40,11 +41,9 @@ def main():
     shared.add_argument("--type", default="data,metadata", help="Comma-separated types to process (data, metadata)")
     shared.add_argument("--no-confirm", action="store_true", help="Skip confirmation prompt before executing")
 
-    # Add refresh and clean
-    subparsers.add_parser("refresh", parents=[shared], help="Refresh data/metadata")
-    subparsers.add_parser("clean", parents=[shared], help="Clean outdated data/metadata")
+    subparsers.add_parser("refresh", parents=[shared], help="Refresh data/metadata using configured playbooks.")
+    subparsers.add_parser("clean", parents=[shared], help="Clean outdated data/metadata using configured playbooks.")
 
-    # Add doctor command
     doctor_parser = subparsers.add_parser("doctor", help="Check SSH connectivity to all inventory hosts")
     doctor_parser.add_argument("-v", "--verbose", action="store_true", help="Show full Ansible output per host")
 
@@ -67,10 +66,21 @@ def main():
             "type": [t.strip() for t in args.type.split(",")],
         }
 
-        if not args.no_confirm:
-            print_execution_plan(args.command, vars_to_pass, PLAYBOOK_SEEDPSD)
+        playbooks = COMMAND_PLAYBOOKS.get(args.command, [])
+        if not playbooks:
+            print(f"No playbooks configured for command '{args.command}'.")
+            sys.exit(1)
 
-        run_hook(PLAYBOOK_SEEDPSD, vars_to_pass)
+        if not args.no_confirm:
+            for pb in playbooks:
+                print_execution_plan(args.command, vars_to_pass, pb)
+            proceed = input("\nDo you want to proceed with executing all playbooks? (y/N): ").strip().lower()
+            if proceed != "y":
+                print("Aborted by user.")
+                sys.exit(0)
+
+        for pb in playbooks:
+            run_hook(pb, vars_to_pass)
 
     else:
         parser.print_help()

@@ -36,18 +36,21 @@ def test_get_playbook_metadata_valid(dummy_playbook):
     assert meta["tasks"] == ["Task 1", "Task 2"]
 
 
-def test_get_playbook_metadata_malformed(malformed_playbook):
-    meta = get_playbook_metadata(malformed_playbook)
-    assert "error" in meta
-    assert "Failed to parse playbook" in meta["error"]
+def test_get_playbook_metadata_malformed(tmp_path):
+    malformed = tmp_path / "malformed.yml"
+    malformed.write_text("- name: Bad: yaml\n: this is broken")
+    result = get_playbook_metadata(str(malformed))
+    assert "error" in result
+    assert "mapping values are not allowed" in result["error"]
 
 
 def test_get_playbook_metadata_empty(tmp_path):
-    empty_playbook = tmp_path / "empty.yml"
-    empty_playbook.write_text("[]")
-    meta = get_playbook_metadata(empty_playbook)
-    assert "error" in meta
-    assert "malformed" in meta["error"]
+    empty = tmp_path / "empty.yml"
+    empty.write_text("")
+    result = get_playbook_metadata(str(empty))
+    assert "error" in result
+    assert "Empty playbook" in result["error"]
+
 
 
 @patch("builtins.input", return_value="y")
@@ -70,20 +73,10 @@ def test_print_execution_plan_aborts_on_no(mock_input, dummy_playbook, capsys):
     out = capsys.readouterr().out
     assert "Aborted by user." in out
     assert e.value.code == 0
-def test_print_execution_plan_shows_metadata_error(tmp_path, capsys):
-    # Create a broken YAML file
-    broken_playbook = tmp_path / "broken.yml"
-    broken_playbook.write_text(":::: not valid yaml ::::")
+@patch("builtins.input", return_value="y")
+def test_print_execution_plan_shows_metadata_error(mock_input, capsys):
+    result = {"error": "mapping values are not allowed here"}
+    print_execution_plan("run", {}, "bad.yml", metadata=result)
+    captured = capsys.readouterr()
+    assert "Warning" in captured.out
 
-    variables = {
-        "network": ["FR"],
-        "station": ["CIEL"],
-    }
-
-    # Patch input to skip the prompt
-    with patch("builtins.input", return_value="y"):
-        print_execution_plan("refresh", variables, broken_playbook)
-
-    out = capsys.readouterr().out
-    assert "Warning" in out
-    assert "Failed to parse playbook" in out

@@ -2,7 +2,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 from dmtri import cli
-
+import sys
 
 
 def test_cli_version_flag(capsys):
@@ -123,3 +123,52 @@ def test_cli_doctor_verbose(mock_run):
     with patch("sys.argv", ["dmtri", "doctor", "--verbose"]):
         cli.main()
         mock_run.assert_called_once_with(verbose=True)
+def test_cli_aborts_on_user_input(monkeypatch):
+    test_args = [
+        "dmtri", "refresh",
+        "--network", "FR",
+        "--starttime", "2024-01-01",
+        "--endtime", "2024-01-02"
+    ]
+    monkeypatch.setattr(sys, "argv", test_args)
+
+    with patch("builtins.input", return_value="n"):
+        with pytest.raises(SystemExit) as excinfo:
+            cli.main()
+        assert excinfo.value.code == 0  # Means user aborted
+@patch("builtins.input", return_value="y")  # Prevent blocking on input()
+def test_cli_exits_if_no_playbook_for_command(mock_input, monkeypatch):
+    test_args = [
+        "dmtri", "refresh",
+        "--network", "FR",
+        "--starttime", "2024-01-01"
+    ]
+    monkeypatch.setattr(sys, "argv", test_args)
+
+    # Temporarily remove any configured playbooks for 'refresh'
+    from dmtri.cli import COMMAND_PLAYBOOKS
+    original_playbooks = COMMAND_PLAYBOOKS.get("refresh")
+    COMMAND_PLAYBOOKS["refresh"] = []
+
+    try:
+        with pytest.raises(SystemExit) as e:
+            cli.main()
+        assert e.value.code == 1
+    finally:
+        # Restore after test
+        COMMAND_PLAYBOOKS["refresh"] = original_playbooks
+@patch("builtins.input", side_effect=["y", "n"])
+@patch("dmtri.cli.print_execution_plan")
+def test_cli_user_aborts_after_plan(mock_print_plan, mock_input, monkeypatch):
+    args = [
+        "dmtri", "refresh",
+        "--network", "GR",
+        "--station", "ATH",
+        "--starttime", "2025-01-01T00:00:00"
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+
+    with pytest.raises(SystemExit) as e:
+        cli.main()
+
+    assert e.value.code == 0
