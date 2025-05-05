@@ -28,7 +28,7 @@ PLAYBOOK_AVAILABILITY_CLEAN = PLAYBOOKS_DIR / "clean" / "availability_clean.yml"
 COMMAND_PLAYBOOKS = {
     "refresh": [
         PLAYBOOK_SEEDPSD_REFRESH,
-        PLAYBOOK_WFCATALOG_REFRESH,
+        #PLAYBOOK_WFCATALOG_REFRESH,
         #PLAYBOOK_AVAILABILITY_REFRESH,
     ],
     "clean": [
