@@ -1,81 +1,97 @@
-- name: Find SDS files and run seedpsd-cli with list
+- name: Find SDS files and run seedpsd-cli with accurate SDS path and DOY matching across years
   hosts: seedpsd_nodes
   gather_facts: false
   vars:
-    description: "Finds SDS files and processes them via seedpsd-cli using --list"
+    description: "Finds SDS files ending in .D.YYYY.DDD across correct SDS folders, then runs seedpsd-cli with --list"
   tasks:
 
-    - name: Extract start and end years
-      vars:
-        description: "Extract year range from starttime and endtime"
+    - name: Set variables
       set_fact:
-        start_year: "{{ starttime.split('-')[0] | int }}"
-        end_year: "{{ endtime.split('-')[0] | int }}"
         file_suffix: "{{ 'D' if 'data' in type else 'M' }}"
-
-    - name: Set list of years to search
-      vars:
-        description: "Generate a list of years to scan for files"
-      set_fact:
-        year_range: "{{ range(start_year | int, (end_year | int) + 1) | list }}"
-
-    - name: Set default wildcards if not provided
-      vars:
-        description: "Apply default wildcards for network, station, location, channel"
-      set_fact:
         network: "{{ network | default('*') }}"
         station: "{{ station | default('*') }}"
-        location: "{{ location | default('*') }}"
+        location: "{{ location | default('') }}"
         channel: "{{ channel | default('*') }}"
 
-    - name: Find matching SDS files and save to temporary list file
-      vars:
-        description: "Search for SDS files matching criteria within date range"
+    - name: Compute list of years to search
+      set_fact:
+        year_range: >-
+          {{ range(
+              (starttime | regex_replace('T.*$', '') | to_datetime('%Y-%m-%d')).year,
+              (endtime | regex_replace('T.*$', '') | to_datetime('%Y-%m-%d')).year + 1
+          ) | list }}
+
+    - name: Generate list of -name patterns for DOY matching across years (fixed logic)
+      shell: |
+        start="{{ starttime | regex_replace('T.*$', '') }}"
+        end="{{ endtime | regex_replace('T.*$', '') }}"
+        tmp_list=""
+
+        start_epoch=$(date -d "$start" +%s)
+        end_epoch=$(date -d "$end" +%s)
+        days_diff=$(( (end_epoch - start_epoch) / 86400 ))
+
+        for i in $(seq 0 $days_diff); do
+          current_date=$(date -d "@$((start_epoch + i * 86400))" +%Y.%j)
+          year=$(echo "$current_date" | cut -d. -f1)
+          doy=$(echo "$current_date" | cut -d. -f2)
+          tmp_list="$tmp_list -name '*{{ file_suffix }}.${year}.${doy}' -o"
+        done
+
+        # Remove trailing -o
+        echo "${tmp_list% -o}"
+      args:
+        executable: /bin/bash
+      register: name_patterns
+      changed_when: false
+
+    - name: Set final find arguments
+      set_fact:
+        find_args: "{{ name_patterns.stdout }}"
+
+    - name: "Debug: Show final find -name args"
+      debug:
+        var: find_args
+
+    - name: Run find in correct SDS folders per year
       shell: >
-        find iso_sds/{{ item }}/{{ network }}/{{ station }}/*.{{ file_suffix }} -type f
-        -newermt "{{ starttime }}" ! -newermt "{{ endtime }}"
+        find iso_sds/{{ item }}/{{ network }}/{{ station }}/{{ channel }}.{{ file_suffix }}/ -type f {{ find_args }}
       loop: "{{ year_range }}"
+      args:
+        executable: /bin/bash
       register: find_results
       changed_when: false
       ignore_errors: true
 
-    - name: Collect all found files
-      vars:
-        description: "Aggregate results from SDS file search"
+    - name: Collect found SDS file paths
       set_fact:
         all_files: >-
           {{ find_results.results
-            | map(attribute='stdout_lines')
-            | flatten
-            | list
-          }}
+             | map(attribute='stdout_lines')
+             | flatten
+             | list }}
 
-    - name: Write all found files to /tmp/matched_files.txt
-      vars:
-        description: "Write the list of matched files to a temp file"
+    - name: "Debug: Show matched file paths"
+      debug:
+        var: all_files
+
+    - name: Write matched files to /tmp/matched_files.txt
       copy:
         content: "{{ all_files | join('\n') }}"
         dest: /tmp/matched_files.txt
 
     - name: Show count of matched files
-      vars:
-        description: "Print how many files were found"
       debug:
         msg: "Total matched files: {{ all_files | length }}"
 
-    - name: Run seedpsd-cli data mseed using the file list
-      vars:
-        description: "Run seedpsd-cli with --simulate and file list"
-      shell: >
+    - name: Run seedpsd-cli with --simulate and --list
+      shell: |
         cd /home/qc/seedpsd &&
         uv run seedpsd-cli data mseed --simulate --list /tmp/matched_files.txt
       args:
         executable: /bin/bash
       register: seedpsd_result
-      ignore_errors: false
 
     - name: Show seedpsd-cli output
-      vars:
-        description: "Display the output of seedpsd-cli"
       debug:
         var: seedpsd_result.stdout_lines
