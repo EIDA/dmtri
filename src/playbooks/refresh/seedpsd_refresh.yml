@@ -12,7 +12,7 @@
         station: "{{ station | default('*') }}"
         location: "{{ location | default('') }}"
         channel: "{{ channel | default('*') }}"
-   # Note: These defaults are already set by argparse, so this is safe but redundant.
+
     - name: Compute list of years to search
       set_fact:
         year_range: >-
@@ -67,26 +67,26 @@
              | flatten
              | list }}
 
-    - name: "Debug: Show matched file paths"
+    - name: Show matched file paths (debug)
       debug:
         var: all_files
-
-    - name: Write matched files to /tmp/matched_files.txt
-      copy:
-        content: "{{ all_files | join('\n') }}"
-        dest: /tmp/matched_files.txt
 
     - name: Show count of matched files
       debug:
         msg: "Total matched files: {{ all_files | length }}"
 
-    - name: Run seedpsd-cli with --simulate and --list
+    - name: Run seedpsd-cli using true multiline input (via process substitution)
       shell: |
         cd /home/qc/seedpsd &&
-        uv run seedpsd-cli data mseed --simulate --list /tmp/matched_files.txt
+        uv run seedpsd-cli data mseed --simulate --list <(
+          {% for f in all_files %}
+          echo {{ f | quote }}
+          {% endfor %}
+        )
       args:
         executable: /bin/bash
       register: seedpsd_result
+
 
     - name: Show seedpsd-cli output
       debug:
