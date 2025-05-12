@@ -12,7 +12,7 @@
         station: "{{ station | default('*') }}"
         location: "{{ location | default('') }}"
         channel: "{{ channel | default('*') }}"
-
+   # Note: These defaults are already set by argparse, so this is safe but redundant.
     - name: Compute list of years to search
       set_fact:
         year_range: >-
@@ -48,10 +48,6 @@
     - name: Set final find arguments
       set_fact:
         find_args: "{{ name_patterns.stdout }}"
-
-    - name: "Debug: Show final find -name args"
-      debug:
-        var: find_args
 
     - name: Run find in correct SDS folders per year
       shell: >
