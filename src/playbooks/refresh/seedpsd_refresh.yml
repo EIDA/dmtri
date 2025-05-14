@@ -5,6 +5,11 @@
     description: "Finds SDS files ending in .D.YYYY.DDD across correct SDS folders, then runs seedpsd-cli with --list"
   tasks:
 
+    - name: Ensure 'seedpsd_dir' is defined for this host
+      fail:
+        msg: "'seedpsd_dir' must be set in the inventory for {{ inventory_hostname }}"
+      when: seedpsd_dir is not defined
+
     - name: Set variables
       set_fact:
         file_suffix: 'D'
@@ -77,7 +82,7 @@
 
     - name: Run seedpsd-cli using true multiline input (via process substitution)
       shell: |
-        cd /home/qc/seedpsd &&
+        cd {{ seedpsd_dir }} &&
         uv run seedpsd-cli data mseed --simulate --list <(
           {% for f in all_files %}
           echo {{ f | quote }}
@@ -86,7 +91,6 @@
       args:
         executable: /bin/bash
       register: seedpsd_result
-
 
     - name: Show seedpsd-cli output
       debug:

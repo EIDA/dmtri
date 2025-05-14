@@ -66,7 +66,22 @@ def main():
             "type": [t.strip() for t in args.type.split(",")],
         }
 
-        playbooks = COMMAND_PLAYBOOKS.get(args.command, [])
+        if args.command == "refresh":
+            selected_types = vars_to_pass["type"]
+            valid_types = set(COMMAND_PLAYBOOKS["refresh"].keys())
+
+            invalid = set(selected_types) - valid_types
+            if invalid:
+                print(f"❌ Invalid --type: {', '.join(invalid)}. Valid types are: {', '.join(valid_types)}.")
+                sys.exit(1)
+
+            playbooks = []
+            for t in selected_types:
+                playbooks.extend(COMMAND_PLAYBOOKS["refresh"][t])
+
+        else:  # clean
+            playbooks = COMMAND_PLAYBOOKS.get("clean", [])
+
         if not playbooks:
             print(f"No playbooks configured for command '{args.command}'.")
             sys.exit(1)
@@ -81,6 +96,7 @@ def main():
 
         for pb in playbooks:
             run_hook(pb, vars_to_pass)
+
     elif args.command == "track":
         playbooks = COMMAND_PLAYBOOKS.get("track", [])
         if not playbooks:
@@ -88,6 +104,7 @@ def main():
             sys.exit(1)
         for pb in playbooks:
             run_hook(pb, {})
+
     else:
         parser.print_help()
         sys.exit(1)
