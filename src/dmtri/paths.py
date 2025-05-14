@@ -30,9 +30,9 @@ PLAYBOOK_AVAILABILITY_CLEAN = PLAYBOOKS_DIR / "clean" / "availability_clean.yml"
 COMMAND_PLAYBOOKS = {
     "refresh": {
         "data": [
-            PLAYBOOK_SEEDPSD_REFRESH,
+            #PLAYBOOK_SEEDPSD_REFRESH,
             #PLAYBOOK_WFCATALOG_REFRESH,
-            #PLAYBOOK_AVAILABILITY_REFRESH,
+            PLAYBOOK_AVAILABILITY_REFRESH,
         ],
         "metadata": [
             PLAYBOOK_METADATA_REFRESH,
