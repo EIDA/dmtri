@@ -43,7 +43,7 @@ def main():
 
     subparsers.add_parser("refresh", parents=[shared], help="Refresh data/metadata using configured playbooks.")
     subparsers.add_parser("clean", parents=[shared], help="Clean outdated data/metadata using configured playbooks.")
-
+    subparsers.add_parser("track", help="Track job status via tracking playbook.")
     doctor_parser = subparsers.add_parser("doctor", help="Check SSH connectivity to all inventory hosts")
     doctor_parser.add_argument("-v", "--verbose", action="store_true", help="Show full Ansible output per host")
 
@@ -81,7 +81,13 @@ def main():
 
         for pb in playbooks:
             run_hook(pb, vars_to_pass)
-
+    elif args.command == "track":
+        playbooks = COMMAND_PLAYBOOKS.get("track", [])
+        if not playbooks:
+            print("No playbooks configured for command 'track'.")
+            sys.exit(1)
+        for pb in playbooks:
+            run_hook(pb, {})
     else:
         parser.print_help()
         sys.exit(1)

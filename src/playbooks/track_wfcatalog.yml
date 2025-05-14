@@ -1,0 +1,34 @@
+# track_wfcatalog.yml
+- name: Track WFCatalogCollector async job
+  hosts: wf_catalogue
+  gather_facts: false
+
+  vars:
+    job_id_path: "{{ collector_dir }}/.last_async_job_id"
+
+  tasks:
+    - name: Ensure collector_dir is defined
+      fail:
+        msg: "You must pass 'collector_dir' via -e"
+      when: collector_dir is not defined
+
+    - name: Read the saved job ID from file
+      slurp:
+        src: "{{ job_id_path }}"
+      register: job_id_file
+
+    - name: Decode job ID
+      set_fact:
+        job_id: "{{ job_id_file.content | b64decode }}"
+
+    - name: Check WFCatalogCollector job status
+      async_status:
+        jid: "{{ job_id }}"
+      register: job_status
+      until: job_status.finished
+      retries: 60
+      delay: 10
+
+    - name: Show final job status
+      debug:
+        var: job_status

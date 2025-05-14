@@ -7,7 +7,7 @@
 
     - name: Set variables
       set_fact:
-        file_suffix: "{{ 'D' if 'data' in type else 'M' }}"
+        file_suffix: 'D'
         network: "{{ network | default('*') }}"
         station: "{{ station | default('*') }}"
         location: "{{ location | default('') }}"
