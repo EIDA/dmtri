@@ -1,8 +1,6 @@
 - name: Find SDS files and run seedpsd-cli with accurate SDS path and DOY matching across years
   hosts: seedpsd_nodes
   gather_facts: false
-  vars:
-    description: "Finds SDS files ending in .D.YYYY.DDD across correct SDS folders, then runs seedpsd-cli with --list"
   tasks:
 
     - name: Ensure 'seedpsd_dir' is defined for this host
@@ -26,7 +24,7 @@
               (endtime | regex_replace('T.*$', '') | to_datetime('%Y-%m-%d')).year + 1
           ) | list }}
 
-    - name: Generate list of -name patterns for DOY matching across years (fixed logic)
+    - name: Generate list of -name patterns for DOY matching across years
       shell: |
         start="{{ starttime | regex_replace('T.*$', '') }}"
         end="{{ endtime | regex_replace('T.*$', '') }}"
@@ -43,7 +41,6 @@
           tmp_list="$tmp_list -name '*{{ file_suffix }}.${year}.${doy}' -o"
         done
 
-        # Remove trailing -o
         echo "${tmp_list% -o}"
       args:
         executable: /bin/bash
@@ -67,10 +64,7 @@
     - name: Collect found SDS file paths
       set_fact:
         all_files: >-
-          {{ find_results.results
-             | map(attribute='stdout_lines')
-             | flatten
-             | list }}
+          {{ find_results.results | map(attribute='stdout_lines') | flatten | list }}
 
     - name: Show matched file paths (debug)
       debug:
@@ -80,7 +74,7 @@
       debug:
         msg: "Total matched files: {{ all_files | length }}"
 
-    - name: Run seedpsd-cli using true multiline input (via process substitution)
+    - name: Run seedpsd-cli asynchronously using process substitution
       shell: |
         cd {{ seedpsd_dir }} &&
         uv run seedpsd-cli data mseed --simulate --list <(
@@ -90,8 +84,37 @@
         )
       args:
         executable: /bin/bash
-      register: seedpsd_result
+      async: 3600
+      poll: 0
+      register: seedpsd_async
 
-    - name: Show seedpsd-cli output
-      debug:
-        var: seedpsd_result.stdout_lines
+    - name: "Track job: append to {{ seedpsd_dir }}/.dmtri_jobs.json"
+      block:
+        - name: Load existing job list (if exists)
+          slurp:
+            src: "{{ seedpsd_dir }}/.dmtri_jobs.json"
+          register: job_file
+          ignore_errors: true
+
+        - name: Parse job list or default to []
+          set_fact:
+            job_list: >-
+              {{ (job_file.content | b64decode | from_json) if job_file.content is defined else [] }}
+
+        - name: Define new job entry
+          set_fact:
+            new_job: {
+              "type": "seedpsd",
+              "job_id": "{{ seedpsd_async.ansible_job_id }}",
+              "host": "{{ inventory_hostname }}",
+              "network": "{{ network }}",
+              "station": "{{ station }}",
+              "start": "{{ starttime }}",
+              "end": "{{ endtime }}",
+              "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+            }
+
+        - name: Write updated job list back to .dmtri_jobs.json
+          copy:
+            content: "{{ (job_list + [new_job]) | to_nice_json }}"
+            dest: "{{ seedpsd_dir }}/.dmtri_jobs.json"

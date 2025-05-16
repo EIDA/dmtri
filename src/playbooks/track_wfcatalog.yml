@@ -1,34 +1,54 @@
-# track_wfcatalog.yml
-- name: Track WFCatalogCollector async job
-  hosts: wf_catalogue
+- name: Track all dmtri async jobs across all hosts
+  hosts: all
   gather_facts: false
 
   vars:
-    job_id_path: "{{ collector_dir }}/.last_async_job_id"
+    possible_tracking_paths:
+      - "{{ seedpsd_dir | default('') }}/.dmtri_jobs.json"
+      - "{{ collector_dir | default('') }}/.dmtri_jobs.json"
+      - "{{ availability_dir | default('') }}/.dmtri_jobs.json"
 
   tasks:
-    - name: Ensure collector_dir is defined
-      fail:
-        msg: "You must pass 'collector_dir' via -e"
-      when: collector_dir is not defined
-
-    - name: Read the saved job ID from file
-      slurp:
-        src: "{{ job_id_path }}"
-      register: job_id_file
-
-    - name: Decode job ID
+    - name: Initialize empty tracking_file
       set_fact:
-        job_id: "{{ job_id_file.content | b64decode }}"
+        tracking_file: ""
 
-    - name: Check WFCatalogCollector job status
+    - name: Probe known tracking file paths
+      stat:
+        path: "{{ item }}"
+      register: probed_files
+      loop: "{{ possible_tracking_paths }}"
+
+    - name: Select first valid tracking file
+      set_fact:
+        tracking_file: "{{ item.item }}"
+      when: item.stat.exists and tracking_file == ""
+      loop: "{{ probed_files.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Fail if no tracking file was found
+      fail:
+        msg: "No tracking file found in known locations on {{ inventory_hostname }}"
+      when: tracking_file == ""
+
+    - name: Load job list from tracking file
+      slurp:
+        src: "{{ tracking_file }}"
+      register: job_file
+
+    - name: Parse job list from JSON
+      set_fact:
+        job_list: "{{ job_file.content | b64decode | from_json }}"
+
+    - name: Check async status of each job
       async_status:
-        jid: "{{ job_id }}"
-      register: job_status
-      until: job_status.finished
-      retries: 60
-      delay: 10
+        jid: "{{ item.job_id }}"
+      loop: "{{ job_list }}"
+      register: job_statuses
+      loop_control:
+        label: "{{ item.type }} {{ item.station | default('') }}"
 
-    - name: Show final job status
+    - name: Show final job statuses
       debug:
-        var: job_status
+        var: job_statuses.results

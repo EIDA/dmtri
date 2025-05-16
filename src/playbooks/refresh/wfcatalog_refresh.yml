@@ -1,4 +1,3 @@
-# run_wfcatalog.yml
 - name: Run WFCatalogCollector with custom ARCHIVE_ROOT (async)
   hosts: wf_catalogue
   gather_facts: false
@@ -33,10 +32,6 @@
         log_path: "{{ collector_dir }}/log/WFCatalog-{{ network }}-{{ station }}-{{ start_date }}-{{ end_date }}.log"
         custom_archive_root: "/home/sysop/iso_sds/{{ year }}/{{ network }}/{{ station }}"
 
-    - name: Debug collector_dir path
-      debug:
-        var: collector_dir
-
     - name: Check if backup exists
       stat:
         path: "{{ config_path }}.back"
@@ -70,10 +65,40 @@
       poll: 0
       register: wfcatalog_async
 
-    - name: Save async job ID to file
-      copy:
-        content: "{{ wfcatalog_async.ansible_job_id }}"
-        dest: "{{ collector_dir }}/.last_async_job_id"
+    - name: "Track job: append to {{ collector_dir }}/.dmtri_jobs.json"
+      block:
+        - name: Load existing job list
+          slurp:
+            src: "{{ collector_dir }}/.dmtri_jobs.json"
+          register: job_file
+          ignore_errors: true
+
+        - name: Parse or start new job list
+          set_fact:
+            job_list: >-
+              {{
+                (job_file.content | b64decode | from_json)
+                if job_file is defined and job_file.content is defined
+                else []
+              }}
+
+        - name: Create job record
+          set_fact:
+            new_job: {
+              "type": "wfcatalog",
+              "job_id": "{{ wfcatalog_async.ansible_job_id }}",
+              "host": "{{ inventory_hostname }}",
+              "network": "{{ network }}",
+              "station": "{{ station }}",
+              "start": "{{ starttime }}",
+              "end": "{{ endtime }}",
+              "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+            }
+
+        - name: Save updated job list
+          copy:
+            content: "{{ (job_list + [new_job]) | to_nice_json }}"
+            dest: "{{ collector_dir }}/.dmtri_jobs.json"
 
     - name: Restore original config.json
       copy:
