@@ -65,24 +65,20 @@
       poll: 0
       register: wfcatalog_async
 
-    - name: "Track job: append to {{ collector_dir }}/.dmtri_jobs.json"
+    - name: "Track job: keep only latest 'wfcatalog' job and preserve others"
       block:
-        - name: Load existing job list
+        - name: Load existing job list (if exists)
           slurp:
             src: "{{ collector_dir }}/.dmtri_jobs.json"
           register: job_file
           ignore_errors: true
 
-        - name: Parse or start new job list
+        - name: Parse job list or default to []
           set_fact:
             job_list: >-
-              {{
-                (job_file.content | b64decode | from_json)
-                if job_file is defined and job_file.content is defined
-                else []
-              }}
+              {{ (job_file.content | b64decode | from_json) if job_file.content is defined else [] }}
 
-        - name: Create job record
+        - name: Define new job entry
           set_fact:
             new_job: {
               "type": "wfcatalog",
@@ -95,9 +91,13 @@
               "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
             }
 
-        - name: Save updated job list
+        - name: Remove any previous job of the same type
+          set_fact:
+            filtered_jobs: "{{ job_list | rejectattr('type', 'equalto', new_job.type) | list }}"
+
+        - name: Save updated job list (one per type)
           copy:
-            content: "{{ (job_list + [new_job]) | to_nice_json }}"
+            content: "{{ (filtered_jobs + [new_job]) | to_nice_json }}"
             dest: "{{ collector_dir }}/.dmtri_jobs.json"
 
     - name: Restore original config.json

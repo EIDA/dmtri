@@ -4,7 +4,7 @@
 
   vars:
     description: "Run simulated metadata update using seedpsd-cli"
-  
+
   tasks:
 
     - name: Ensure required variables are provided
@@ -39,3 +39,50 @@
     - name: Show metadata update output
       debug:
         var: metadata_result.stdout_lines
+
+    - name: "Track job: keep only latest seedpsd metadata job and preserve others"
+      block:
+
+        - name: Load existing job list (if exists)
+          slurp:
+            src: "{{ seedpsd_dir }}/.dmtri_jobs.json"
+          register: job_file
+          ignore_errors: true
+
+        - name: Parse job list or default to []
+          set_fact:
+            job_list: >-
+              {{ (job_file.content | b64decode | from_json) if job_file.content is defined else [] }}
+
+        - name: Define new job entry
+          set_fact:
+            new_job: {
+              "type": "seedpsd",
+              "subtype": "metadata",
+              "job_id": "manual-{{ lookup('pipe', 'date +%s') }}",
+              "host": "{{ inventory_hostname }}",
+              "network": "{{ network }}",
+              "station": "{{ station }}",
+              "start": "{{ starttime }}",
+              "end": "{{ endtime }}",
+              "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+            }
+
+        - name: Remove any previous job of the same type and subtype
+          set_fact:
+            filtered_jobs: >-
+              {{
+                job_list
+                | rejectattr('type', 'equalto', new_job.type)
+                | list
+                + job_list
+                | selectattr('type', 'equalto', new_job.type)
+                | selectattr('subtype', 'defined')
+                | rejectattr('subtype', 'equalto', new_job.subtype)
+                | list
+              }}
+
+        - name: Save updated job list (one job per subtype)
+          copy:
+            content: "{{ (filtered_jobs + [new_job]) | to_nice_json }}"
+            dest: "{{ seedpsd_dir }}/.dmtri_jobs.json"

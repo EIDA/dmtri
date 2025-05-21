@@ -11,7 +11,7 @@ INVENTORY_DIR = SRC_DIR / "inventory"
 INVENTORY_FILE = INVENTORY_DIR / "hosts.ini"
 
 # Specific playbooks
-PLAYBOOK_TRACK = PLAYBOOKS_DIR / "track_wfcatalog.yml"
+PLAYBOOK_TRACK = PLAYBOOKS_DIR / "track.yml"
 PLAYBOOK_LIST_SDS = PLAYBOOKS_DIR / "list_sds_files.yml"
 
 # Refresh Data playbooks
@@ -30,9 +30,9 @@ PLAYBOOK_AVAILABILITY_CLEAN = PLAYBOOKS_DIR / "clean" / "availability_clean.yml"
 COMMAND_PLAYBOOKS = {
     "refresh": {
         "data": [
-            PLAYBOOK_SEEDPSD_REFRESH,
+            #PLAYBOOK_SEEDPSD_REFRESH,
             #PLAYBOOK_WFCATALOG_REFRESH,
-            #PLAYBOOK_AVAILABILITY_REFRESH,
+            PLAYBOOK_AVAILABILITY_REFRESH,
         ],
         "metadata": [
             #PLAYBOOK_METADATA_REFRESH,
@@ -40,7 +40,7 @@ COMMAND_PLAYBOOKS = {
     },
     "clean": [
         PLAYBOOK_SEEDPSD_CLEAN,
-        PLAYBOOK_WFCATALOG_CLEAN,
+        #PLAYBOOK_WFCATALOG_CLEAN,
         PLAYBOOK_AVAILABILITY_CLEAN,
     ],
     "track": [

@@ -1,6 +1,7 @@
 - name: Find SDS files and run seedpsd-cli with accurate SDS path and DOY matching across years
   hosts: seedpsd_nodes
   gather_facts: false
+
   tasks:
 
     - name: Ensure 'seedpsd_dir' is defined for this host
@@ -88,8 +89,9 @@
       poll: 0
       register: seedpsd_async
 
-    - name: "Track job: append to {{ seedpsd_dir }}/.dmtri_jobs.json"
+    - name: "Track job: keep only latest seedpsd data job and preserve others"
       block:
+
         - name: Load existing job list (if exists)
           slurp:
             src: "{{ seedpsd_dir }}/.dmtri_jobs.json"
@@ -105,6 +107,7 @@
           set_fact:
             new_job: {
               "type": "seedpsd",
+              "subtype": "data",
               "job_id": "{{ seedpsd_async.ansible_job_id }}",
               "host": "{{ inventory_hostname }}",
               "network": "{{ network }}",
@@ -114,7 +117,21 @@
               "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
             }
 
-        - name: Write updated job list back to .dmtri_jobs.json
+        - name: Remove any previous job of the same type and subtype
+          set_fact:
+            filtered_jobs: >-
+              {{
+                job_list
+                | rejectattr('type', 'equalto', new_job.type)
+                | list
+                + job_list
+                | selectattr('type', 'equalto', new_job.type)
+                | selectattr('subtype', 'defined')
+                | rejectattr('subtype', 'equalto', new_job.subtype)
+                | list
+              }}
+
+        - name: Save updated job list (one job per subtype)
           copy:
-            content: "{{ (job_list + [new_job]) | to_nice_json }}"
+            content: "{{ (filtered_jobs + [new_job]) | to_nice_json }}"
             dest: "{{ seedpsd_dir }}/.dmtri_jobs.json"
