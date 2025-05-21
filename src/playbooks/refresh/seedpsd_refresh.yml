@@ -1,18 +1,22 @@
 - name: Find SDS files and run seedpsd-cli with accurate SDS path and DOY matching across years
   hosts: seedpsd_nodes
   gather_facts: false
-  vars:
-    description: "Finds SDS files ending in .D.YYYY.DDD across correct SDS folders, then runs seedpsd-cli with --list"
+
   tasks:
+
+    - name: Ensure 'seedpsd_dir' is defined for this host
+      fail:
+        msg: "'seedpsd_dir' must be set in the inventory for {{ inventory_hostname }}"
+      when: seedpsd_dir is not defined
 
     - name: Set variables
       set_fact:
-        file_suffix: "{{ 'D' if 'data' in type else 'M' }}"
+        file_suffix: 'D'
         network: "{{ network | default('*') }}"
         station: "{{ station | default('*') }}"
         location: "{{ location | default('') }}"
         channel: "{{ channel | default('*') }}"
-   # Note: These defaults are already set by argparse, so this is safe but redundant.
+
     - name: Compute list of years to search
       set_fact:
         year_range: >-
@@ -21,7 +25,7 @@
               (endtime | regex_replace('T.*$', '') | to_datetime('%Y-%m-%d')).year + 1
           ) | list }}
 
-    - name: Generate list of -name patterns for DOY matching across years (fixed logic)
+    - name: Generate list of -name patterns for DOY matching across years
       shell: |
         start="{{ starttime | regex_replace('T.*$', '') }}"
         end="{{ endtime | regex_replace('T.*$', '') }}"
@@ -38,7 +42,6 @@
           tmp_list="$tmp_list -name '*{{ file_suffix }}.${year}.${doy}' -o"
         done
 
-        # Remove trailing -o
         echo "${tmp_list% -o}"
       args:
         executable: /bin/bash
@@ -62,32 +65,73 @@
     - name: Collect found SDS file paths
       set_fact:
         all_files: >-
-          {{ find_results.results
-             | map(attribute='stdout_lines')
-             | flatten
-             | list }}
+          {{ find_results.results | map(attribute='stdout_lines') | flatten | list }}
 
-    - name: "Debug: Show matched file paths"
+    - name: Show matched file paths (debug)
       debug:
         var: all_files
-
-    - name: Write matched files to /tmp/matched_files.txt
-      copy:
-        content: "{{ all_files | join('\n') }}"
-        dest: /tmp/matched_files.txt
 
     - name: Show count of matched files
       debug:
         msg: "Total matched files: {{ all_files | length }}"
 
-    - name: Run seedpsd-cli with --simulate and --list
+    - name: Run seedpsd-cli asynchronously using process substitution
       shell: |
-        cd /home/qc/seedpsd &&
-        uv run seedpsd-cli data mseed --simulate --list /tmp/matched_files.txt
+        cd {{ seedpsd_dir }} &&
+        uv run seedpsd-cli data mseed --simulate --list <(
+          {% for f in all_files %}
+          echo {{ f | quote }}
+          {% endfor %}
+        )
       args:
         executable: /bin/bash
-      register: seedpsd_result
+      async: 3600
+      poll: 0
+      register: seedpsd_async
 
-    - name: Show seedpsd-cli output
-      debug:
-        var: seedpsd_result.stdout_lines
+    - name: "Track job: keep only latest seedpsd data job and preserve others"
+      block:
+
+        - name: Load existing job list (if exists)
+          slurp:
+            src: "{{ seedpsd_dir }}/.dmtri_jobs.json"
+          register: job_file
+          ignore_errors: true
+
+        - name: Parse job list or default to []
+          set_fact:
+            job_list: >-
+              {{ (job_file.content | b64decode | from_json) if job_file.content is defined else [] }}
+
+        - name: Define new job entry
+          set_fact:
+            new_job: {
+              "type": "seedpsd",
+              "subtype": "data",
+              "job_id": "{{ seedpsd_async.ansible_job_id }}",
+              "host": "{{ inventory_hostname }}",
+              "network": "{{ network }}",
+              "station": "{{ station }}",
+              "start": "{{ starttime }}",
+              "end": "{{ endtime }}",
+              "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+            }
+
+        - name: Remove any previous job of the same type and subtype
+          set_fact:
+            filtered_jobs: >-
+              {{
+                job_list
+                | rejectattr('type', 'equalto', new_job.type)
+                | list
+                + job_list
+                | selectattr('type', 'equalto', new_job.type)
+                | selectattr('subtype', 'defined')
+                | rejectattr('subtype', 'equalto', new_job.subtype)
+                | list
+              }}
+
+        - name: Save updated job list (one job per subtype)
+          copy:
+            content: "{{ (filtered_jobs + [new_job]) | to_nice_json }}"
+            dest: "{{ seedpsd_dir }}/.dmtri_jobs.json"

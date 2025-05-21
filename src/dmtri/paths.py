@@ -11,13 +11,15 @@ INVENTORY_DIR = SRC_DIR / "inventory"
 INVENTORY_FILE = INVENTORY_DIR / "hosts.ini"
 
 # Specific playbooks
-PLAYBOOK_ECHO = PLAYBOOKS_DIR / "echo.yml"
+PLAYBOOK_TRACK = PLAYBOOKS_DIR / "track.yml"
 PLAYBOOK_LIST_SDS = PLAYBOOKS_DIR / "list_sds_files.yml"
 
-# Refresh playbooks
+# Refresh Data playbooks
 PLAYBOOK_SEEDPSD_REFRESH = PLAYBOOKS_DIR / "refresh" / "seedpsd_refresh.yml"
 PLAYBOOK_WFCATALOG_REFRESH = PLAYBOOKS_DIR / "refresh" / "wfcatalog_refresh.yml"
 PLAYBOOK_AVAILABILITY_REFRESH = PLAYBOOKS_DIR / "refresh" / "availability_refresh.yml"
+# Refresh metadata playbooks
+PLAYBOOK_METADATA_REFRESH = PLAYBOOKS_DIR / "refresh" / "seedpsd_metadata_refresh.yml"
 
 # Clean playbooks
 PLAYBOOK_SEEDPSD_CLEAN = PLAYBOOKS_DIR / "clean" /"seedpsd_clean.yml"
@@ -26,14 +28,22 @@ PLAYBOOK_AVAILABILITY_CLEAN = PLAYBOOKS_DIR / "clean" / "availability_clean.yml"
 
 # Group playbooks by command
 COMMAND_PLAYBOOKS = {
-    "refresh": [
-        #PLAYBOOK_SEEDPSD_REFRESH,
-        PLAYBOOK_WFCATALOG_REFRESH,
-        #PLAYBOOK_AVAILABILITY_REFRESH,
-    ],
+    "refresh": {
+        "data": [
+            #PLAYBOOK_SEEDPSD_REFRESH,
+            #PLAYBOOK_WFCATALOG_REFRESH,
+            PLAYBOOK_AVAILABILITY_REFRESH,
+        ],
+        "metadata": [
+            #PLAYBOOK_METADATA_REFRESH,
+        ]
+    },
     "clean": [
         PLAYBOOK_SEEDPSD_CLEAN,
-        PLAYBOOK_WFCATALOG_CLEAN,
+        #PLAYBOOK_WFCATALOG_CLEAN,
         PLAYBOOK_AVAILABILITY_CLEAN,
     ],
+    "track": [
+        PLAYBOOK_TRACK
+    ]
 }

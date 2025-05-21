@@ -1,0 +1,99 @@
+- name: "Track all dmtri async jobs across all hosts"
+  hosts: all
+  gather_facts: false
+
+  vars:
+    possible_tracking_paths:
+      - "{{ seedpsd_dir | default('') }}/.dmtri_jobs.json"
+      - "{{ collector_dir | default('') }}/.dmtri_jobs.json"
+      - "{{ availability_dir | default('') }}/.dmtri_jobs.json"
+
+  tasks:
+
+    - name: "Probe known tracking file paths"
+      stat:
+        path: "{{ item }}"
+      register: probed_files
+      loop: "{{ possible_tracking_paths }}"
+
+    - name: "Collect all valid tracking file paths"
+      set_fact:
+        valid_tracking_files: >-
+          {{
+            probed_files.results
+            | selectattr('stat.exists', 'equalto', true)
+            | map(attribute='item')
+            | list
+          }}
+
+    - name: "Fail if no tracking files were found on this host"
+      fail:
+        msg: "No .dmtri_jobs.json file found in known locations on {{ inventory_hostname }}"
+      when: valid_tracking_files | length == 0
+
+    - name: "Load job list from tracking files"
+      slurp:
+        src: "{{ item }}"
+      loop: "{{ valid_tracking_files }}"
+      register: job_file
+      loop_control:
+        label: "{{ item }}"
+
+    - name: "Parse all job lists into combined job list"
+      set_fact:
+        combined_jobs: >-
+          {{
+            job_file.results
+            | map(attribute='content')
+            | map('b64decode')
+            | map('from_json')
+            | flatten
+          }}
+
+    - name: "Check async status of async jobs (IDs starting with j)"
+      async_status:
+        jid: "{{ item.job_id }}"
+      loop: "{{ combined_jobs | selectattr('job_id', 'match', '^j\\d+') | list }}"
+      register: job_statuses
+      loop_control:
+        label: "{{ item.type }} {{ item.station | default('') }}"
+
+    - name: "Build manual job results (IDs like manual-xxxx)"
+      set_fact:
+        manual_jobs: >-
+          {{
+            combined_jobs
+            | selectattr('job_id', 'match', '^manual-')
+            | map('combine', {'status': '✅ Manual (not tracked)'})
+            | list
+          }}
+
+    - name: "Merge async and manual job results"
+      set_fact:
+        all_job_results: >-
+          {{
+            (job_statuses.results | default([])) + manual_jobs
+          }}
+
+    - name: "Print job summary per host"
+      debug:
+        msg: >-
+          Job ID: {{ item.item.job_id if item.item is defined else item.job_id }}
+          Type: {{ item.item.type if item.item is defined else item.type }}{{ ' (' ~ (item.item.subtype if item.item is defined else item.subtype) ~ ')' if (item.item.subtype if item.item is defined else item.subtype) is defined else '' }}
+          Network: {{ item.item.network | default('—') if item.item is defined else item.network }}
+          Station: {{ item.item.station | default('—') if item.item is defined else item.station }}
+          Start: {{ item.item.start | default('—') if item.item is defined else item.start }}
+          End: {{ item.item.end | default('—') if item.item is defined else item.end }}
+          Host: {{ item.item.host | default(inventory_hostname) if item.item is defined else item.host }}
+          Status: {{
+            item.status | default(
+              item.started is defined and item.started | bool |
+                ternary(
+                  item.finished | default(false) | bool | ternary('✅ Finished', '⏳ Still Running'),
+                  '❌ Not Started or Failed'
+                )
+            )
+          }}
+      loop: "{{ all_job_results }}"
+      loop_control:
+        label: "{{ item.item.job_id if item.item is defined else item.job_id }}"

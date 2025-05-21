@@ -1,136 +1,107 @@
-- name: Find SDS files and run WFCatalogCollector using venv
+- name: Run WFCatalogCollector with custom ARCHIVE_ROOT (async)
   hosts: wf_catalogue
   gather_facts: false
 
+  vars:
+    venv_python: ".env/bin/python3.11"
+    collector_script: "WFCatalogCollector.py"
+    config_path: "{{ collector_dir }}/config.json"
+
   tasks:
 
-    - name: Set variables
-      set_fact:
-        file_suffix: "D"
-        network: "{{ network | default('*') }}"
-        station: "{{ station | default('*') }}"
-        location: "{{ location | default('') }}"
-        channel: "{{ channel | default('*') }}"
-        log_name: "WFCatalog-{{ starttime }}-{{ endtime }}.log"
-
-    - name: Compute list of years to search
-      set_fact:
-        year_range: >-
-          {{ range(
-              (starttime | regex_replace('T.*$', '') | to_datetime('%Y-%m-%d')).year,
-              (endtime | regex_replace('T.*$', '') | to_datetime('%Y-%m-%d')).year + 1
-          ) | list }}
-
-    - name: Generate -name patterns for DOY matching across years
-      shell: |
-        start="{{ starttime | regex_replace('T.*$', '') }}"
-        end="{{ endtime | regex_replace('T.*$', '') }}"
-        tmp_list=""
-
-        start_epoch=$(date -d "$start" +%s)
-        end_epoch=$(date -d "$end" +%s)
-        days_diff=$(( (end_epoch - start_epoch) / 86400 ))
-
-        for i in $(seq 0 $days_diff); do
-          current_date=$(date -d "@$((start_epoch + i * 86400))" +%Y.%j)
-          year=$(echo "$current_date" | cut -d. -f1)
-          doy=$(echo "$current_date" | cut -d. -f2)
-          tmp_list="$tmp_list -name '*{{ file_suffix }}.${year}.${doy}' -o"
-        done
-
-        echo "${tmp_list% -o}"
-      args:
-        executable: /bin/bash
-      register: name_patterns
-      changed_when: false
-
-    - name: Set final find args
-      set_fact:
-        find_args: "{{ name_patterns.stdout }}"
-
-    - name: Run find in correct SDS folders per year
-      shell: >
-        find iso_sds/{{ item }}/{{ network }}/{{ station }}/*{{ file_suffix }}/ -type f {{ find_args }}
-      loop: "{{ year_range }}"
-      args:
-        executable: /bin/bash
-      register: find_results
-      changed_when: false
-      ignore_errors: true
-
-    - name: Aggregate all found SDS files
-      set_fact:
-        all_files: >-
-          {{ find_results.results
-             | map(attribute='stdout_lines')
-             | flatten
-             | list }}
-
-    - name: Show number of matched files
-      debug:
-        msg: "Total matched SDS files: {{ all_files | length }}"
-
-    - name: Find WFCatalogCollector.py path
-      shell: find /home/sysop -type f -name WFCatalogCollector.py | head -n 1
-      register: collector_find
-      changed_when: false
-
-    - name: Fail if collector script was not found
+    - name: Ensure required variables are provided
       fail:
-        msg: "WFCatalogCollector.py not found on remote host"
-      when: collector_find.stdout == ""
+        msg: "You must pass 'network', 'station', 'starttime', and 'endtime' via -e"
+      when: network is not defined or station is not defined or starttime is not defined or endtime is not defined
 
-    - name: Set collector paths
+    - name: Compute basic derived values
       set_fact:
-        collector_dir: "{{ collector_find.stdout | dirname }}"
-        collector_script: "{{ collector_find.stdout | basename }}"
-        test_config_path: "/tmp/config.test.json"
-        log_path: "{{ collector_find.stdout | dirname }}/log/{{ log_name }}"
-        venv_python: "{{ collector_find.stdout | dirname }}/.env/bin/python3.11"
+        start_date: "{{ starttime | regex_replace('T.*$', '') }}"
+        end_date: "{{ endtime | regex_replace('T.*$', '') }}"
+        year: "{{ starttime[0:4] }}"
 
-    - name: Write test config.json (Mongo disabled)
+    - name: Compute range and paths
+      set_fact:
+        range_days: >-
+          {{
+            (
+              (endtime | to_datetime('%Y-%m-%dT%H:%M:%S')) -
+              (starttime | to_datetime('%Y-%m-%dT%H:%M:%S'))
+            ).days + 1
+          }}
+        log_path: "{{ collector_dir }}/log/WFCatalog-{{ network }}-{{ station }}-{{ start_date }}-{{ end_date }}.log"
+        custom_archive_root: "/home/sysop/iso_sds/{{ year }}/{{ network }}/{{ station }}"
+
+    - name: Check if backup exists
+      stat:
+        path: "{{ config_path }}.back"
+      register: config_backup
+
+    - name: Backup original config.json
       copy:
-        dest: "{{ test_config_path }}"
-        content: |
-          {
-            "VERSION": "test",
-            "ARCHIVE": "Test",
-            "PUBLISHER": "Test",
-            "STRUCTURE": "SDS",
-            "MONGO": {
-              "ENABLED": false,
-              "DB_HOST": "localhost",
-              "DB_PORT": 27017,
-              "DB_NAME": "test",
-              "DB_USER": "user",
-              "DB_PASS": "pass",
-              "ALLOW_DOUBLE": false
-            },
-            "ARCHIVE_ROOT": "/dev/null",
-            "DEFAULT_LOG_FILE": "{{ log_path }}",
-            "PROCESSING_TIMEOUT": 60,
-            "ENABLE_DUBLIN_CORE": false,
-            "FILTERS": {
-              "WHITE": ["*"],
-              "BLACK": []
-            }
-          }
+        src: "{{ config_path }}"
+        dest: "{{ config_path }}.back"
+        remote_src: true
+      when: not config_backup.stat.exists
 
-    - name: Convert SDS file list to JSON string
-      set_fact:
-        all_files_json: "{{ all_files | to_json }}"
+    - name: Update ARCHIVE_ROOT in config.json
+      replace:
+        path: "{{ config_path }}"
+        regexp: '"ARCHIVE_ROOT":\s*".*?"'
+        replace: '"ARCHIVE_ROOT": "{{ custom_archive_root }}"'
 
-    - name: Run WFCatalogCollector using venv and log output
-      shell: >
-        cd {{ collector_dir }} &&
-        WF_CONFIG_PATH={{ test_config_path }} {{ venv_python }} {{ collector_script }}
-        --list '{{ all_files_json }}' --flags --csegs --stdout --update --logfile '{{ log_path }}'
+    - name: Run WFCatalogCollector asynchronously
+      shell: |
+        cd {{ collector_dir }} && \
+        {{ venv_python }} {{ collector_script }} \
+        --flags --csegs \
+        --logfile {{ log_path }} \
+        --date {{ start_date }} \
+        --range {{ range_days }} \
+        --update --stdout
       args:
         executable: /bin/bash
-      register: wfcatalog_output
-      when: all_files | length > 0
+      async: 3600
+      poll: 0
+      register: wfcatalog_async
 
-    - name: Show WFCatalogCollector output (truncated)
-      debug:
-        var: wfcatalog_output.stdout_lines
-      when: wfcatalog_output is defined
+    - name: "Track job: keep only latest 'wfcatalog' job and preserve others"
+      block:
+        - name: Load existing job list (if exists)
+          slurp:
+            src: "{{ collector_dir }}/.dmtri_jobs.json"
+          register: job_file
+          ignore_errors: true
+
+        - name: Parse job list or default to []
+          set_fact:
+            job_list: >-
+              {{ (job_file.content | b64decode | from_json) if job_file.content is defined else [] }}
+
+        - name: Define new job entry
+          set_fact:
+            new_job: {
+              "type": "wfcatalog",
+              "job_id": "{{ wfcatalog_async.ansible_job_id }}",
+              "host": "{{ inventory_hostname }}",
+              "network": "{{ network }}",
+              "station": "{{ station }}",
+              "start": "{{ starttime }}",
+              "end": "{{ endtime }}",
+              "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+            }
+
+        - name: Remove any previous job of the same type
+          set_fact:
+            filtered_jobs: "{{ job_list | rejectattr('type', 'equalto', new_job.type) | list }}"
+
+        - name: Save updated job list (one per type)
+          copy:
+            content: "{{ (filtered_jobs + [new_job]) | to_nice_json }}"
+            dest: "{{ collector_dir }}/.dmtri_jobs.json"
+
+    - name: Restore original config.json
+      copy:
+        src: "{{ config_path }}.back"
+        dest: "{{ config_path }}"
+        remote_src: true

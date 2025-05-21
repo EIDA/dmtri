@@ -148,7 +148,7 @@ def test_cli_exits_if_no_playbook_for_command(mock_input, monkeypatch):
     # Temporarily remove any configured playbooks for 'refresh'
     from dmtri.cli import COMMAND_PLAYBOOKS
     original_playbooks = COMMAND_PLAYBOOKS.get("refresh")
-    COMMAND_PLAYBOOKS["refresh"] = []
+    COMMAND_PLAYBOOKS["refresh"] = {}
 
     try:
         with pytest.raises(SystemExit) as e:
