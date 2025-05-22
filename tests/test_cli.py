@@ -34,7 +34,7 @@ def test_cli_refresh_no_confirm_runs(mock_run_hook):
         with patch("sys.argv", args):
             cli.main()
 
-        mock_run_hook.assert_called_once()
+        assert mock_run_hook.call_count == 4
 
 
 @patch("dmtri.cli.run_hook")
@@ -50,8 +50,9 @@ def test_cli_refresh_with_confirm_runs(mock_print_plan, mock_run_hook):
         with patch("sys.argv", args):
             cli.main()
 
-    mock_print_plan.assert_called_once()
-    mock_run_hook.assert_called_once()
+    assert mock_print_plan.call_count == 4
+    assert mock_run_hook.call_count == 4
+
 
 
 def test_cli_requires_starttime():

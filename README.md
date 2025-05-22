@@ -1,129 +1,126 @@
-
 # dmtri
 
 [![Run Tests](https://github.com/EIDA/dmtri/actions/workflows/pytest.yml/badge.svg)](https://github.com/EIDA/dmtri/actions/workflows/pytest.yml)
 ![Coverage](badges/coverage.svg)
 
-`dmtri` is a command-line tool designed to trigger metadata and data refresh simulations across EIDA FDSN nodes using Ansible automation.
+`dmtri` is a command-line tool designed to trigger metadata and data refresh simulations across EIDA nodes using Ansible automation.
+
+---
+- `seedpsd` 
+- `wfcatalog` 
+- `availability` 
+
+It uses `.dmtri_jobs.json` per host to track async job state and integrates with `uv` and `ansible` for CLI automation.
 
 ---
 
-## Installation
+## 🚀 Quick Start
 
-Clone the repository and set up the environment:
+You can use `dmtri` in two ways, depending on your preference:
 
-```bash
-git clone https://github.com/EIDA/dmtri.git
-cd dmtri
-uv sync
-```
+### Option 1: Using `uvx`
 
----
-
-## CLI Usage
+You can run commands using:
 
 ```bash
-uv run dmtri [command] [options]
-```
+uvx dmtri <command> [options]
 
-### Commands
-
-- `refresh`: Run a non-destructive seedpsd data/metadata refresh simulation
-- `clean`: Simulate cleaning of outdated data/metadata
-
-### Required Parameters
-
-- `--starttime <timestamp>`  
-  Start of the time range (ISO 8601 format, e.g., `2025-01-01T00:00:00`)
-
-### Optional Parameters
-
-- `--endtime <timestamp>`  
-  End of the time range (default: current UTC time)
-
-- `--network <codes>`  
-  One or more FDSN network codes. Wildcards supported. Default: `"*"`
-
-- `--station <codes>`  
-  One or more FDSN station codes. Wildcards supported. Default: `"*"`
-
-- `--location <codes>`  
-  One or more FDSN location codes. Wildcards supported. Default: `"*"`
-
-- `--channel <codes>`  
-  One or more FDSN channel codes. Wildcards supported. Default: `"*"`
-
-- `--type <data,metadata>`  
-  Comma-separated values. Valid values: `data`, `metadata` (default: both)
-
-- `--no-confirm`  
-  Skips the confirmation prompt before running the playbook
-
----
-
-## Examples
-
-Refresh metadata and data for a specific station:
-
-```bash
-uv run dmtri refresh   --network HL   --station ATH   --starttime 2025-01-01T00:00:00   --endtime 2025-01-05T00:00:00
-```
-
-Clean data older than a given date:
-
-```bash
-uv run dmtri clean   --network HL   --station ATH   --starttime 2025-01-01T00:00:00
-```
-
-Suppress the execution plan confirmation:
-
-```bash
-uv run dmtri refresh --no-confirm ...
 ```
 
 ---
 
-## Validation
-
-The tool enforces several rules before execution:
-
-- `--starttime` must be provided
-- The time range cannot exceed 7 days without confirmation
-- `--type` must include at least one valid value (`data`, `metadata`)
-
----
-
-## Development
-
-Run the CLI locally:
+### Option 2: Global (Tool-based) — Ideal for global CLI use
 
 ```bash
-uv run dmtri --help
+uv tool install dmtri
 ```
 
-Run the test suite:
+This makes `dmtri` available globally:
 
 ```bash
-uv run pytest --cov=dmtri --cov-report=term-missing
+uvx dmtri <command> [options]
+
+```
+
+You can update it any time using:
+
+```bash
+uv tool upgrade dmtri
 ```
 
 ---
 
-## Troubleshooting with `dmtri doctor`
+### 2. Configure inventory
 
-Check SSH connectivity to your configured seedpsd hosts using:
+Edit the file: `src/inventory/hosts.ini`
+
+Example:
+
+```ini
+[seedpsd_nodes]
+<SEEDPSD_HOST> ansible_user=<USER> ansible_ssh_pass="<PASSWORD>" ansible_connection=ssh ansible_become=false ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
+[seedpsd_nodes:vars]
+seedpsd_dir=/home/<USER>/seedpsd
+
+[wf_catalogue]
+<WFCATALOG_HOST> ansible_user=<USER> ansible_ssh_pass="<PASSWORD>" ansible_connection=ssh ansible_become=false ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
+[wf_catalogue:vars]
+collector_dir=/home/<USER>/Programs/wfcatalogue<VERSION>/wfcatalog/collector2
+
+[ws_availability]
+<AVAILABILITY_HOST> ansible_user=<USER> ansible_ssh_pass="<PASSWORD>" ansible_connection=ssh ansible_become=false ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
+[ws_availability:vars]
+availability_dir=/home/<USER>/Programs/ws-availability<VERSION>/views
+mongo_user=<MONGO_USERNAME>
+mongo_pass=<MONGO_PASSWORD>
+mongo_authdb=<MONGO_DATABASE>
+
+```
+
+---
+
+### 3. Run example jobs
+
+By default, this command runs **all refresh playbooks** (seedpsd, wfcatalog, and availability):
+
+```bash
+uv run dmtri refresh -e "network=HL station=ATH starttime=2024-01-01T00:00:00 endtime=2024-01-02T00:00:00"
+```
+
+---
+
+### 4. Track jobs across hosts
+
+```bash
+uv run dmtri track
+```
+
+Shows per-host job status:
+```
+Job ID: j123... Type: seedpsd  Station: ATH  Status: ✅ Finished
+Job ID: manual-... Type: availability  Status: ✅ Manual (not tracked)
+```
+
+---
+
+### 5. Troubleshooting with `dmtri doctor`
+
+Check SSH connectivity to your configured hosts using:
 
 ```bash
 uv run dmtri doctor
 ```
 
-This uses the Ansible `ping` module to test SSH access to all servers listed in your inventory.
+This uses the Ansible `ping` module to test access to all servers in your inventory.
 
-### Options
+#### Options
 
 - `--verbose` — Show full output from each host
 
-### Example
+#### Example
 
 ```bash
 uv run dmtri doctor --verbose
@@ -134,3 +131,4 @@ If no response is received, ensure:
 - You're connected to the VPN (if applicable)
 - SSH access is configured correctly in your inventory file
 - Host IPs and credentials are reachable and valid
+
