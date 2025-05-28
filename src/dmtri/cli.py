@@ -1,5 +1,6 @@
 import argparse
 import sys
+import os
 from datetime import datetime, timezone
 import logging
 
@@ -12,7 +13,6 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 PROJECT_URL = "https://github.com/EIDA/dmtri/issues"
-
 
 def main():
     global_options = argparse.ArgumentParser(add_help=False)
@@ -40,6 +40,7 @@ def main():
     shared.add_argument("-E", "--endtime", default=now_str, help="End time (default: now in UTC)")
     shared.add_argument("--type", default="data,metadata", help="Comma-separated types to process (data, metadata)")
     shared.add_argument("--no-confirm", action="store_true", help="Skip confirmation prompt before executing")
+    shared.add_argument("--debug", action="store_true", help="Show verbose output from Ansible")
 
     subparsers.add_parser("refresh", parents=[shared], help="Refresh data/metadata using configured playbooks.")
     subparsers.add_parser("clean", parents=[shared], help="Clean outdated data/metadata using configured playbooks.")
@@ -48,6 +49,11 @@ def main():
     doctor_parser.add_argument("-v", "--verbose", action="store_true", help="Show full Ansible output per host")
 
     args = parser.parse_args()
+
+    # 🔧 Set Ansible config based on debug flag
+    cfg_file = "ansible_verbose.cfg" if getattr(args, "debug", False) else "ansible_quiet.cfg"
+    cfg_path = os.path.abspath(cfg_file)
+    os.environ["ANSIBLE_CONFIG"] = cfg_path
 
     if args.command == "doctor":
         from dmtri.doctor import run_diagnostics
@@ -64,6 +70,7 @@ def main():
             "starttime": args.starttime,
             "endtime": args.endtime,
             "type": [t.strip() for t in args.type.split(",")],
+            "debug": args.debug,
         }
 
         if args.command == "refresh":
@@ -72,14 +79,13 @@ def main():
 
             invalid = set(selected_types) - valid_types
             if invalid:
-                print(f"❌ Invalid --type: {', '.join(invalid)}. Valid types are: {', '.join(valid_types)}.")
+                print(f" Invalid --type: {', '.join(invalid)}. Valid types are: {', '.join(valid_types)}.")
                 sys.exit(1)
 
             playbooks = []
             for t in selected_types:
                 playbooks.extend(COMMAND_PLAYBOOKS["refresh"][t])
-
-        else:  # clean
+        else:
             playbooks = COMMAND_PLAYBOOKS.get("clean", [])
 
         if not playbooks:

@@ -20,10 +20,12 @@ def run_hook(playbook_name: Path, vars: dict,inventory: Path = INVENTORY_FILE) -
 
     cmd = [
         "ansible-playbook",
-        str(playbook_name.resolve()),       
+        str(playbook_name.resolve()),
         "-i",
-        str(inventory.resolve())             
+        str(inventory.resolve()),
+        
     ] + extra_vars
+
 
     logger.info(f"Running: {' '.join(str(x) for x in cmd)}")
 

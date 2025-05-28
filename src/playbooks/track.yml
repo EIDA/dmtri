@@ -2,61 +2,51 @@
   hosts: all
   gather_facts: false
 
-  vars:
-    possible_tracking_paths:
-      - "{{ seedpsd_dir | default('') }}/.dmtri_jobs.json"
-      - "{{ collector_dir | default('') }}/.dmtri_jobs.json"
-      - "{{ availability_dir | default('') }}/.dmtri_jobs.json"
-
   tasks:
 
-    - name: "Probe known tracking file paths"
-      stat:
-        path: "{{ item }}"
-      register: probed_files
-      loop: "{{ possible_tracking_paths }}"
+    - name: "Gather remote environment variables"
+      setup:
+        filter: ansible_env
 
-    - name: "Collect all valid tracking file paths"
-      set_fact:
-        valid_tracking_files: >-
-          {{
-            probed_files.results
-            | selectattr('stat.exists', 'equalto', true)
-            | map(attribute='item')
-            | list
-          }}
+    - name: "Find job tracking files in remote ~/.dmtri/jobs/{{ inventory_hostname }}/"
+      find:
+        paths: "{{ ansible_env.HOME }}/.dmtri/jobs/{{ inventory_hostname }}"
+        patterns: "*.json"
+        file_type: file
+      register: job_files
+      ignore_errors: true
 
-    - name: "Fail if no tracking files were found on this host"
+    - name: "Fail if no job files were found on this host"
       fail:
-        msg: "No .dmtri_jobs.json file found in known locations on {{ inventory_hostname }}"
-      when: valid_tracking_files | length == 0
+        msg: "No job tracking files found for {{ inventory_hostname }}"
+      when: job_files.files | length == 0
 
-    - name: "Load job list from tracking files"
+    - name: "Load job files"
       slurp:
-        src: "{{ item }}"
-      loop: "{{ valid_tracking_files }}"
-      register: job_file
+        src: "{{ item.path }}"
+      loop: "{{ job_files.files }}"
+      register: loaded_job_data
       loop_control:
-        label: "{{ item }}"
+        label: "{{ item.path }}"
 
-    - name: "Parse all job lists into combined job list"
+    - name: "Parse and combine job lists"
       set_fact:
         combined_jobs: >-
           {{
-            job_file.results
+            loaded_job_data.results
             | map(attribute='content')
             | map('b64decode')
             | map('from_json')
             | flatten
           }}
 
-    - name: "Check async status of async jobs (IDs starting with j)"
+    - name: "Check async job statuses (IDs starting with j)"
       async_status:
         jid: "{{ item.job_id }}"
       loop: "{{ combined_jobs | selectattr('job_id', 'match', '^j\\d+') | list }}"
       register: job_statuses
       loop_control:
-        label: "{{ item.type }} {{ item.station | default('') }}"
+        label: "{{ item.job_id }}"
 
     - name: "Build manual job results (IDs like manual-xxxx)"
       set_fact:

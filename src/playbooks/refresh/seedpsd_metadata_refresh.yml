@@ -7,6 +7,10 @@
 
   tasks:
 
+    - name: Collect remote environment variables
+      setup:
+        filter: ansible_env
+
     - name: Ensure required variables are provided
       fail:
         msg: "You must pass 'network', 'station', 'starttime', and 'endtime' via -e"
@@ -17,11 +21,12 @@
         msg: "'seedpsd_dir' must be set in the inventory for {{ inventory_hostname }}"
       when: seedpsd_dir is not defined
 
-    - name: Compute basic derived values
+    - name: Compute derived values
       set_fact:
         start_date: "{{ starttime | regex_replace('T.*$', '') }}"
         end_date: "{{ endtime | regex_replace('T.*$', '') }}"
         year: "{{ starttime[0:4] }}"
+        subtype: "metadata"
 
     - name: Run seedpsd-cli metadata update in simulate mode
       shell: >
@@ -29,8 +34,8 @@
         uv run seedpsd-cli metadata update
         --network {{ network }}
         --station {{ station }}
-        --location '{{ location }}'
-        --channel '{{ channel }}'
+        --location '{{ location | default('*') }}'
+        --channel '{{ channel | default('*') }}'
         --simulate
       args:
         executable: /bin/bash
@@ -40,49 +45,35 @@
       debug:
         var: metadata_result.stdout_lines
 
-    - name: "Track job: keep only latest seedpsd metadata job and preserve others"
-      block:
+    - name: Set remote job directory path
+      set_fact:
+        job_dir: "{{ ansible_env.HOME }}/.dmtri/jobs/{{ inventory_hostname }}"
 
-        - name: Load existing job list (if exists)
-          slurp:
-            src: "{{ seedpsd_dir }}/.dmtri_jobs.json"
-          register: job_file
-          ignore_errors: true
+    - name: Set remote job file path
+      set_fact:
+        job_path: "{{ job_dir }}/seedpsd-{{ subtype }}.json"
 
-        - name: Parse job list or default to []
-          set_fact:
-            job_list: >-
-              {{ (job_file.content | b64decode | from_json) if job_file.content is defined else [] }}
+    - name: Ensure job directory exists
+      file:
+        path: "{{ job_dir }}"
+        state: directory
+        mode: '0755'
 
-        - name: Define new job entry
-          set_fact:
-            new_job: {
-              "type": "seedpsd",
-              "subtype": "metadata",
-              "job_id": "manual-{{ lookup('pipe', 'date +%s') }}",
-              "host": "{{ inventory_hostname }}",
-              "network": "{{ network }}",
-              "station": "{{ station }}",
-              "start": "{{ starttime }}",
-              "end": "{{ endtime }}",
-              "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
-            }
+    - name: Define new job entry
+      set_fact:
+        new_job: {
+          "type": "seedpsd",
+          "subtype": "{{ subtype }}",
+          "job_id": "manual-{{ lookup('pipe', 'date +%s') }}",
+          "host": "{{ inventory_hostname }}",
+          "network": "{{ network }}",
+          "station": "{{ station }}",
+          "start": "{{ starttime }}",
+          "end": "{{ endtime }}",
+          "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+        }
 
-        - name: Remove any previous job of the same type and subtype
-          set_fact:
-            filtered_jobs: >-
-              {{
-                job_list
-                | rejectattr('type', 'equalto', new_job.type)
-                | list
-                + job_list
-                | selectattr('type', 'equalto', new_job.type)
-                | selectattr('subtype', 'defined')
-                | rejectattr('subtype', 'equalto', new_job.subtype)
-                | list
-              }}
-
-        - name: Save updated job list (one job per subtype)
-          copy:
-            content: "{{ (filtered_jobs + [new_job]) | to_nice_json }}"
-            dest: "{{ seedpsd_dir }}/.dmtri_jobs.json"
+    - name: Save latest metadata job (overwrite)
+      copy:
+        content: "{{ [new_job] | to_nice_json }}"
+        dest: "{{ job_path }}"
