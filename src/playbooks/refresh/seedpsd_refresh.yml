@@ -92,9 +92,15 @@
     - name: "Track job: keep only latest seedpsd data job and preserve others"
       block:
 
+        - name: Ensure ~/.dmtri/jobs/<host> directory exists
+          file:
+            path: "~/.dmtri/jobs/{{ inventory_hostname }}"
+            state: directory
+            mode: '0755'
+
         - name: Load existing job list (if exists)
           slurp:
-            src: "{{ seedpsd_dir }}/.dmtri_jobs.json"
+            src: "~/.dmtri/jobs/{{ inventory_hostname }}/seedpsd_data.json"
           register: job_file
           ignore_errors: true
 
@@ -134,4 +140,4 @@
         - name: Save updated job list (one job per subtype)
           copy:
             content: "{{ (filtered_jobs + [new_job]) | to_nice_json }}"
-            dest: "{{ seedpsd_dir }}/.dmtri_jobs.json"
+            dest: "~/.dmtri/jobs/{{ inventory_hostname }}/seedpsd_data.json"

@@ -65,25 +65,27 @@
             (job_statuses.results | default([])) + manual_jobs
           }}
 
-    - name: "Print job summary per host"
+    - name: "Print concise job summary per host"
       debug:
         msg: >-
-          Job ID: {{ item.item.job_id if item.item is defined else item.job_id }}
-          Type: {{ item.item.type if item.item is defined else item.type }}{{ ' (' ~ (item.item.subtype if item.item is defined else item.subtype) ~ ')' if (item.item.subtype if item.item is defined else item.subtype) is defined else '' }}
-          Network: {{ item.item.network | default('—') if item.item is defined else item.network }}
-          Station: {{ item.item.station | default('—') if item.item is defined else item.station }}
-          Start: {{ item.item.start | default('—') if item.item is defined else item.start }}
-          End: {{ item.item.end | default('—') if item.item is defined else item.end }}
-          Host: {{ item.item.host | default(inventory_hostname) if item.item is defined else item.host }}
-          Status: {{
-            item.status | default(
-              item.started is defined and item.started | bool |
-                ternary(
-                  item.finished | default(false) | bool | ternary('✅ Finished', '⏳ Still Running'),
-                  '❌ Not Started or Failed'
-                )
-            )
-          }}
+          {{ '%-18s' | format(item.item.host | default(inventory_hostname)) }}
+          {{ '%-28s' | format(item.item.job_id if item.item is defined else item.job_id) }}
+          {{ '%-22s' | format((item.item.type if item.item is defined else item.type) ~
+                              (' (' ~ (item.item.subtype if item.item is defined else item.subtype) ~ ')' 
+                               if (item.item.subtype if item.item is defined else item.subtype) is defined else '')) }}
+          {{ '%-10s' | format(item.item.network | default('—')) }}
+          {{ '%-10s' | format(item.item.station | default('—')) }}
+          {{ '%-20s' | format(item.item.start | default('—')) }}
+          {{ '%-20s' | format(item.item.end | default('—')) }}
+          {{ (
+              item.status | default(
+                item.started is defined and item.started | bool |
+                  ternary(
+                    item.finished | default(false) | bool | ternary('✅ Finished', '⏳ Running'),
+                    '❌ Failed'
+                  )
+              )
+          ) }}
       loop: "{{ all_job_results }}"
       loop_control:
         label: "{{ item.item.job_id if item.item is defined else item.job_id }}"

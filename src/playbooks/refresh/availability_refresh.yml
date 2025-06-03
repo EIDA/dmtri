@@ -42,9 +42,15 @@
     - name: "Track job: keep only latest 'availability' job and preserve others"
       block:
 
+        - name: Ensure ~/.dmtri/jobs/{{ inventory_hostname }} directory exists
+          file:
+            path: "~/.dmtri/jobs/{{ inventory_hostname }}"
+            state: directory
+            mode: '0755'
+
         - name: "Load existing job list (if exists)"
           slurp:
-            src: "{{ availability_dir }}/.dmtri_jobs.json"
+            src: "~/.dmtri/jobs/{{ inventory_hostname }}/availability.json"
           register: job_file
           ignore_errors: true
 
@@ -73,4 +79,4 @@
         - name: "Save updated job list (one job per type)"
           copy:
             content: "{{ (filtered_jobs + [new_job]) | to_nice_json }}"
-            dest: "{{ availability_dir }}/.dmtri_jobs.json"
+            dest: "~/.dmtri/jobs/{{ inventory_hostname }}/availability.json"
