@@ -38,7 +38,7 @@ uv tool install dmtri
 This makes `dmtri` available globally:
 
 ```bash
-uvx dmtri <command> [options]
+dmtri <command> [options]
 
 ```
 
