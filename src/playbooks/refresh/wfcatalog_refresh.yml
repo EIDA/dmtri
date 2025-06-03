@@ -1,128 +1,107 @@
-- name: Find SDS files and run seedpsd-cli with accurate SDS path and DOY matching across years
-  hosts: seedpsd_nodes
+- name: Run WFCatalogCollector with custom ARCHIVE_ROOT (async)
+  hosts: wf_catalogue
   gather_facts: false
+
+  vars:
+    venv_python: ".env/bin/python3.11"
+    collector_script: "WFCatalogCollector.py"
+    config_path: "{{ collector_dir }}/config.json"
 
   tasks:
 
-    - name: Collect remote environment variables
-      setup:
-        filter: ansible_env
-
-    - name: Ensure 'seedpsd_dir' is defined for this host
+    - name: Ensure required variables are provided
       fail:
-        msg: "'seedpsd_dir' must be set in the inventory for {{ inventory_hostname }}"
-      when: seedpsd_dir is not defined
+        msg: "You must pass 'network', 'station', 'starttime', and 'endtime' via -e"
+      when: network is not defined or station is not defined or starttime is not defined or endtime is not defined
 
-    - name: Set variables
+    - name: Compute basic derived values
       set_fact:
-        file_suffix: 'D'
-        network: "{{ network | default('*') }}"
-        station: "{{ station | default('*') }}"
-        location: "{{ location | default('') }}"
-        channel: "{{ channel | default('*') }}"
-        subtype: "data"
+        start_date: "{{ starttime | regex_replace('T.*$', '') }}"
+        end_date: "{{ endtime | regex_replace('T.*$', '') }}"
+        year: "{{ starttime[0:4] }}"
 
-    - name: Compute list of years to search
+    - name: Compute range and paths
       set_fact:
-        year_range: >-
-          {{ range(
-              (starttime | regex_replace('T.*$', '') | to_datetime('%Y-%m-%d')).year,
-              (endtime | regex_replace('T.*$', '') | to_datetime('%Y-%m-%d')).year + 1
-          ) | list }}
+        range_days: >-
+          {{
+            (
+              (endtime | to_datetime('%Y-%m-%dT%H:%M:%S')) -
+              (starttime | to_datetime('%Y-%m-%dT%H:%M:%S'))
+            ).days + 1
+          }}
+        log_path: "{{ collector_dir }}/log/WFCatalog-{{ network }}-{{ station }}-{{ start_date }}-{{ end_date }}.log"
+        custom_archive_root: "/home/sysop/iso_sds/{{ year }}/{{ network }}/{{ station }}"
 
-    - name: Generate list of -name patterns for DOY matching across years
+    - name: Check if backup exists
+      stat:
+        path: "{{ config_path }}.back"
+      register: config_backup
+
+    - name: Backup original config.json
+      copy:
+        src: "{{ config_path }}"
+        dest: "{{ config_path }}.back"
+        remote_src: true
+      when: not config_backup.stat.exists
+
+    - name: Update ARCHIVE_ROOT in config.json
+      replace:
+        path: "{{ config_path }}"
+        regexp: '"ARCHIVE_ROOT":\s*".*?"'
+        replace: '"ARCHIVE_ROOT": "{{ custom_archive_root }}"'
+
+    - name: Run WFCatalogCollector asynchronously
       shell: |
-        start="{{ starttime | regex_replace('T.*$', '') }}"
-        end="{{ endtime | regex_replace('T.*$', '') }}"
-        tmp_list=""
-
-        start_epoch=$(date -d "$start" +%s)
-        end_epoch=$(date -d "$end" +%s)
-        days_diff=$(( (end_epoch - start_epoch) / 86400 ))
-
-        for i in $(seq 0 $days_diff); do
-          current_date=$(date -d "@$((start_epoch + i * 86400))" +%Y.%j)
-          year=$(echo "$current_date" | cut -d. -f1)
-          doy=$(echo "$current_date" | cut -d. -f2)
-          tmp_list="$tmp_list -name '*{{ file_suffix }}.${year}.${doy}' -o"
-        done
-
-        echo "${tmp_list% -o}"
-      args:
-        executable: /bin/bash
-      register: name_patterns
-      changed_when: false
-
-    - name: Set final find arguments
-      set_fact:
-        find_args: "{{ name_patterns.stdout }}"
-
-    - name: Run find in correct SDS folders per year
-      shell: >
-        find iso_sds/{{ item }}/{{ network }}/{{ station }}/{{ channel }}.{{ file_suffix }}/ -type f {{ find_args }}
-      loop: "{{ year_range }}"
-      args:
-        executable: /bin/bash
-      register: find_results
-      changed_when: false
-      ignore_errors: true
-
-    - name: Collect found SDS file paths
-      set_fact:
-        all_files: >-
-          {{ find_results.results | map(attribute='stdout_lines') | flatten | list }}
-
-    - name: Show matched file paths (debug)
-      debug:
-        var: all_files
-
-    - name: Show count of matched files
-      debug:
-        msg: "Total matched files: {{ all_files | length }}"
-
-    - name: Run seedpsd-cli asynchronously using process substitution
-      shell: |
-        cd {{ seedpsd_dir }} &&
-        uv run seedpsd-cli data mseed --simulate --list <(
-          {% for f in all_files %}
-          echo {{ f | quote }}
-          {% endfor %}
-        )
+        cd {{ collector_dir }} && \
+        {{ venv_python }} {{ collector_script }} \
+        --flags --csegs \
+        --logfile {{ log_path }} \
+        --date {{ start_date }} \
+        --range {{ range_days }} \
+        --update --stdout
       args:
         executable: /bin/bash
       async: 3600
       poll: 0
-      register: seedpsd_async
+      register: wfcatalog_async
 
-    - name: Set job directory path
-      set_fact:
-        job_dir: "{{ ansible_env.HOME }}/.dmtri/jobs/{{ inventory_hostname }}"
+    - name: "Track job: keep only latest 'wfcatalog' job and preserve others"
+      block:
+        - name: Load existing job list (if exists)
+          slurp:
+            src: "{{ collector_dir }}/.dmtri_jobs.json"
+          register: job_file
+          ignore_errors: true
 
-    - name: Set job file path
-      set_fact:
-        job_path: "{{ job_dir }}/seedpsd-{{ subtype }}.json"
+        - name: Parse job list or default to []
+          set_fact:
+            job_list: >-
+              {{ (job_file.content | b64decode | from_json) if job_file.content is defined else [] }}
 
-    - name: Ensure job directory exists
-      file:
-        path: "{{ job_dir }}"
-        state: directory
-        mode: '0755'
+        - name: Define new job entry
+          set_fact:
+            new_job: {
+              "type": "wfcatalog",
+              "job_id": "{{ wfcatalog_async.ansible_job_id }}",
+              "host": "{{ inventory_hostname }}",
+              "network": "{{ network }}",
+              "station": "{{ station }}",
+              "start": "{{ starttime }}",
+              "end": "{{ endtime }}",
+              "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+            }
 
-    - name: Define new job entry
-      set_fact:
-        new_job: {
-          "type": "seedpsd",
-          "subtype": "{{ subtype }}",
-          "job_id": "{{ seedpsd_async.ansible_job_id }}",
-          "host": "{{ inventory_hostname }}",
-          "network": "{{ network }}",
-          "station": "{{ station }}",
-          "start": "{{ starttime }}",
-          "end": "{{ endtime }}",
-          "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
-        }
+        - name: Remove any previous job of the same type
+          set_fact:
+            filtered_jobs: "{{ job_list | rejectattr('type', 'equalto', new_job.type) | list }}"
 
-    - name: Save latest job (overwrite file for this subtype)
+        - name: Save updated job list (one per type)
+          copy:
+            content: "{{ (filtered_jobs + [new_job]) | to_nice_json }}"
+            dest: "{{ collector_dir }}/.dmtri_jobs.json"
+
+    - name: Restore original config.json
       copy:
-        content: "{{ [new_job] | to_nice_json }}"
-        dest: "{{ job_path }}"
+        src: "{{ config_path }}.back"
+        dest: "{{ config_path }}"
+        remote_src: true

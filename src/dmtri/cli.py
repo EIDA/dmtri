@@ -49,9 +49,11 @@ def main():
     doctor_parser.add_argument("-v", "--verbose", action="store_true", help="Show full Ansible output per host")
 
     args = parser.parse_args()
+    if args.command == "track":
+        cfg_file = "ansible_verbose.cfg"
+    else:
+        cfg_file = "ansible_verbose.cfg" if getattr(args, "debug", False) else "ansible_quiet.cfg"
 
-    # 🔧 Set Ansible config based on debug flag
-    cfg_file = "ansible_verbose.cfg" if getattr(args, "debug", False) else "ansible_quiet.cfg"
     cfg_path = os.path.abspath(cfg_file)
     os.environ["ANSIBLE_CONFIG"] = cfg_path
 
