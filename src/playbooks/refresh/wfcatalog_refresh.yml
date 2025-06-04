@@ -67,9 +67,16 @@
 
     - name: "Track job: keep only latest 'wfcatalog' job and preserve others"
       block:
+
+        - name: Ensure ~/.dmtri/jobs/{{ inventory_hostname }} directory exists
+          file:
+            path: "~/.dmtri/jobs/{{ inventory_hostname }}"
+            state: directory
+            mode: '0755'
+
         - name: Load existing job list (if exists)
           slurp:
-            src: "{{ collector_dir }}/.dmtri_jobs.json"
+            src: "~/.dmtri/jobs/{{ inventory_hostname }}/wfcatalog.json"
           register: job_file
           ignore_errors: true
 
@@ -98,7 +105,7 @@
         - name: Save updated job list (one per type)
           copy:
             content: "{{ (filtered_jobs + [new_job]) | to_nice_json }}"
-            dest: "{{ collector_dir }}/.dmtri_jobs.json"
+            dest: "~/.dmtri/jobs/{{ inventory_hostname }}/wfcatalog.json"
 
     - name: Restore original config.json
       copy:

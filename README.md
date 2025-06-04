@@ -14,7 +14,7 @@ It uses `.dmtri_jobs.json` per host to track async job state and integrates with
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 You can use `dmtri` in two ways, depending on your preference:
 
@@ -132,3 +132,28 @@ If no response is received, ensure:
 - SSH access is configured correctly in your inventory file
 - Host IPs and credentials are reachable and valid
 
+###  Operation Details
+
+`dmtri` supports two main operations for both metadata and data: `refresh` and `clean`. These affect the following components:
+
+#### 🔄 Refresh
+
+- **Metadata**
+  - `seedpsd`: Scans for new metadata.
+  - `availability`: Refreshes the view in MongoDB.
+
+- **Data**
+  - Identifies data files in the archive for the specified epoch (by NSLC and time range).
+    - `seedpsd`: Recalculates seedPSD for new files.
+    - `wfcatalog`: Runs the collector on new data files.
+
+#### 🧹 Clean
+
+- **Metadata**
+  - `seedpsd`: Removes the metadata entries.
+  - `availability`: Refreshes the view in MongoDB.
+
+- **Data**
+  - Identifies data files in the archive for the specified epoch.
+    - `seedpsd`: Removes associated seedPSD data (via CLI).
+    - `wfcatalog`: Removes files using the `--delete` option in the collector.
