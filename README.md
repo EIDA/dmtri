@@ -87,7 +87,8 @@ mongo_authdb=<MONGO_DATABASE>
 By default, this command runs **all refresh playbooks** (seedpsd, wfcatalog, and availability):
 
 ```bash
-uv run dmtri refresh -e "network=HL station=ATH starttime=2024-01-01T00:00:00 endtime=2024-01-02T00:00:00"
+uv run dmtri refresh --network HL --station ATH --starttime 2024-01-01T00:00:00 --endtime 2024-01-02T00:00:00
+
 ```
 
 ---
