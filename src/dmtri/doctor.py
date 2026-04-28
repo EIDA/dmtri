@@ -4,8 +4,10 @@ from dmtri.paths import INVENTORY_FILE
 
 logger = logging.getLogger(__name__)
 
-def run_diagnostics(verbose=False, retries=1):
-    logger.info(f"Running connectivity check using inventory: {INVENTORY_FILE}")
+def run_diagnostics(verbose=False, retries=1, inventory=None):
+    if inventory is None:
+        inventory = INVENTORY_FILE
+    logger.info(f"Running connectivity check using inventory: {inventory}")
 
     ok_hosts = set()
     unreachable_hosts = set()
@@ -15,7 +17,7 @@ def run_diagnostics(verbose=False, retries=1):
 
         r = ansible_runner.run(
             private_data_dir=".",
-            inventory=str(INVENTORY_FILE.resolve()),
+            inventory=str(inventory.resolve()),
             module="ping",
             host_pattern="all",
             quiet=not verbose,
