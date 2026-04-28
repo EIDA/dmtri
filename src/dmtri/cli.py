@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 import logging
 
 from dmtri.execution_plan import print_execution_plan
-from dmtri.utils import get_version, validate_and_normalize_args
+from dmtri.utils import get_version, validate_and_normalize_args , parse_flexible_date
 from dmtri.hooks.hooks import run_hook
-from dmtri.paths import COMMAND_PLAYBOOKS
+from dmtri.paths import COMMAND_PLAYBOOKS, ANSIBLE_QUIET_CFG, ANSIBLE_TRACK_CFG, ANSIBLE_VERBOSE_CFG, get_inventory_path
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -26,6 +26,7 @@ def main():
         action="version",
         version=f"%(prog)s version {get_version()} — See {PROJECT_URL} for updates or to report issues."
     )
+    parser.add_argument("-i", "--inventory", help="Path to custom Ansible inventory file")
 
     subparsers = parser.add_subparsers(dest="command")
 
@@ -34,10 +35,18 @@ def main():
     shared.add_argument("-s", "--station", nargs="+", default=["*"], help="FDSN station code(s), supports wildcards")
     shared.add_argument("-l", "--location", nargs="+", default=["*"], help="FDSN location code(s), supports wildcards")
     shared.add_argument("-c", "--channel", nargs="+", default=["*"], help="FDSN channel code(s), supports wildcards")
-    shared.add_argument("-S", "--starttime", required=True, help="Start time (ISO 8601 format)")
-
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-    shared.add_argument("-E", "--endtime", default=now_str, help="End time (default: now in UTC)")
+    shared.add_argument(
+        "-S", "--starttime", "--start",
+        type=parse_flexible_date,
+        required=True,
+        help="Start time (e.g. '2025-07-01', '2025-07-01T12:00:00', 'yesterday', '-2d')",
+    )
+    shared.add_argument(
+        "-E", "--endtime", "--end",
+        type=parse_flexible_date,
+        default="now",
+        help="End time (default: now in UTC)",
+    )
     shared.add_argument("--type", default="data,metadata", help="Comma-separated types to process (data, metadata)")
     shared.add_argument("--no-confirm", action="store_true", help="Skip confirmation prompt before executing")
     shared.add_argument("--debug", action="store_true", help="Show verbose output from Ansible")
@@ -48,18 +57,25 @@ def main():
     doctor_parser = subparsers.add_parser("doctor", help="Check SSH connectivity to all inventory hosts")
     doctor_parser.add_argument("-v", "--verbose", action="store_true", help="Show full Ansible output per host")
 
+    init_parser = subparsers.add_parser("init", help="Scaffold user config directory with bundled playbooks and inventory")
+    init_parser.add_argument("--force", action="store_true", help="Overwrite existing user config files")
+
     args = parser.parse_args()
     if args.command == "track":
-        cfg_file = "ansible_verbose.cfg"
+        cfg_path = ANSIBLE_TRACK_CFG
     else:
-        cfg_file = "ansible_verbose.cfg" if getattr(args, "debug", False) else "ansible_quiet.cfg"
+        cfg_path = ANSIBLE_VERBOSE_CFG if getattr(args, "debug", False) else ANSIBLE_QUIET_CFG
 
-    cfg_path = os.path.abspath(cfg_file)
-    os.environ["ANSIBLE_CONFIG"] = cfg_path
+    os.environ["ANSIBLE_CONFIG"] = str(cfg_path.resolve())
+    inventory_path = get_inventory_path(args.inventory)
+
+    if args.command == "init":
+        from dmtri.init import run_init
+        return run_init(force=args.force)
 
     if args.command == "doctor":
         from dmtri.doctor import run_diagnostics
-        return run_diagnostics(verbose=args.verbose)
+        return run_diagnostics(verbose=args.verbose, inventory=inventory_path)
 
     elif args.command in ("refresh", "clean"):
         start_dt, end_dt, types = validate_and_normalize_args(args, parser)
@@ -69,11 +85,12 @@ def main():
             "station": args.station,
             "location": args.location,
             "channel": args.channel,
-            "starttime": args.starttime,
-            "endtime": args.endtime,
+            "starttime": args.starttime.isoformat(),
+            "endtime": args.endtime.isoformat(),
             "type": [t.strip() for t in args.type.split(",")],
             "debug": args.debug,
         }
+
 
         if args.command == "refresh":
             selected_types = vars_to_pass["type"]
@@ -103,7 +120,7 @@ def main():
                 sys.exit(0)
 
         for pb in playbooks:
-            run_hook(pb, vars_to_pass)
+            run_hook(pb, vars_to_pass, inventory=inventory_path)
 
     elif args.command == "track":
         playbooks = COMMAND_PLAYBOOKS.get("track", [])
@@ -111,7 +128,7 @@ def main():
             print("No playbooks configured for command 'track'.")
             sys.exit(1)
         for pb in playbooks:
-            run_hook(pb, {})
+            run_hook(pb, {}, inventory=inventory_path)
 
     else:
         parser.print_help()

@@ -1,0 +1,167 @@
+- name: Refresh SeedPSD data for a given network/station/time range
+  hosts: seedpsd_nodes
+  gather_facts: false
+
+  vars:
+    # 'seedpsd_dir' should be defined in inventory
+    # archive_root is usually assumed to be 'iso_sds' relative to seedpsd_dir or absolute
+
+  tasks:
+    - name: Ensure 'seedpsd_dir' is defined for this host
+      fail:
+        msg: "'seedpsd_dir' must be set in the inventory for {{ inventory_hostname }}"
+      when: seedpsd_dir is not defined
+
+    - name: Ensure required variables are provided
+      fail:
+        msg: "You must pass 'network', 'station', 'starttime', and 'endtime' via -e"
+      when: network is not defined or station is not defined or starttime is not defined or endtime is not defined
+
+    - name: Set variables
+      set_fact:
+        file_suffix: "{{ 'D' if 'data' in type | default('data') else 'M' }}"
+        network_list: "{{ [network] | flatten }}"
+        station_list: "{{ [station] | flatten }}"
+        channel_list: "{{ [channel | default('*')] | flatten }}"
+        start_year: "{{ starttime | regex_replace('^([0-9]{4}).*$', '\\1') | int }}"
+        end_year: "{{ endtime | regex_replace('^([0-9]{4}).*$', '\\1') | int }}"
+
+    - name: Compute list of years to search
+      set_fact:
+        year_range: "{{ range(start_year | int, (end_year | int) + 1) | list }}"
+
+    - name: "[Discovery] Generate list of -name patterns for DOY matching"
+      shell: |
+        start="{{ starttime | regex_replace('T.*$', '') }}"
+        end="{{ endtime | regex_replace('T.*$', '') }}"
+        tmp_list=""
+
+        start_epoch=$(date -d "$start" +%s)
+        end_epoch=$(date -d "$end" +%s)
+        days_diff=$(( (end_epoch - start_epoch) / 86400 ))
+
+        for i in $(seq 0 $days_diff); do
+          current_date=$(date -d "@$((start_epoch + i * 86400))" +%Y.%j)
+          year=$(echo "$current_date" | cut -d. -f1)
+          doy=$(echo "$current_date" | cut -d. -f2)
+          tmp_list="$tmp_list -name '*{{ file_suffix }}.${year}.${doy}' -o"
+        done
+
+        # Remove trailing -o
+        echo "${tmp_list% -o}"
+      args:
+        executable: /bin/bash
+      register: name_patterns
+      changed_when: false
+
+    - name: "[Discovery] Find SDS files across years"
+      shell: >
+        find iso_sds/{{ item_year }}/{{ net }}/{{ sta }}/{{ chan }}.{{ file_suffix }}/ -type f {{ name_patterns.stdout }}
+      loop: "{{ query('nested', year_range, network_list, station_list, channel_list) }}"
+      vars:
+        item_year: "{{ item[0] }}"
+        net: "{{ item[1] }}"
+        sta: "{{ item[2] }}"
+        chan: "{{ item[3] }}"
+      args:
+        executable: /bin/bash
+      register: find_results
+      changed_when: false
+      ignore_errors: true
+
+    - name: "[Discovery] Collect found SDS file paths"
+      set_fact:
+        all_files: >-
+          {{ find_results.results
+             | map(attribute='stdout_lines')
+             | flatten
+             | select('string')
+             | list }}
+
+    - name: "DISPLAY DISCOVERY SUMMARY"
+      debug:
+        msg: 
+          - "========================================"
+          - " SeedPSD Discovery Summary"
+          - "========================================"
+          - "  Files found : {{ all_files | length }}"
+          - "  Years       : {{ year_range | join(', ') }}"
+          - "  Suffix      : {{ file_suffix }}"
+          - "========================================"
+      when: true
+
+    - name: "Check if files were found"
+      fail:
+        msg: "No SDS files found for the given criteria."
+      when: all_files | length == 0
+
+    - name: Write matched files to temporary list
+      copy:
+        content: "{{ all_files | join('\n') }}"
+        dest: "/tmp/seedpsd_refresh_{{ network }}_{{ station }}.txt"
+
+    - name: Run seedpsd-cli data load with --list and --update
+      shell: |
+        set -o pipefail
+        cd {{ seedpsd_dir }} && \
+        uv run seedpsd-cli data mseed \
+          --update \
+          --list "/tmp/seedpsd_refresh_{{ network }}_{{ station }}.txt" \
+          2>&1 | tee seedpsd_last_run.log
+      args:
+        executable: /bin/bash
+      register: seedpsd_result
+
+    - name: "DISPLAY SEEDPSD DATA RESULTS"
+      debug:
+        msg:
+          - "========================================"
+          - " SeedPSD Data — Results"
+          - "========================================"
+          - "  Status   : {{ 'SUCCESS' if seedpsd_result.rc == 0 else 'FAILED' }}"
+          - "  Files    : {{ all_files | length }}"
+          - "----------------------------------------"
+          - "  Summary  :"
+          - "{{ (seedpsd_result.stdout | regex_findall('\\[INFO\\] (.*)', multiline=True) | length > 0) | ternary((seedpsd_result.stdout | regex_findall('\\[INFO\\] (.*)', multiline=True)) | join('\n  - '), 'No informative logs found') }}"
+          - "========================================"
+      when: true
+
+    # ---------------------------------------------------------------
+    # JOB TRACKING
+    # ---------------------------------------------------------------
+
+    - name: Ensure ~/.dmtri/jobs/{{ inventory_hostname }} directory exists
+      file:
+        path: "~/.dmtri/jobs/{{ inventory_hostname }}"
+        state: directory
+        mode: '0755'
+
+    - name: "Load existing job list"
+      slurp:
+        src: "~/.dmtri/jobs/{{ inventory_hostname }}/seedpsd-data.json"
+      register: job_file
+      ignore_errors: true
+
+    - name: "Parse job list"
+      set_fact:
+        job_list: "{{ (job_file.content | b64decode | from_json) if job_file.content is defined else [] }}"
+
+    - name: Define new job entry
+      set_fact:
+        new_job: {
+          "type": "seedpsd_refresh",
+          "job_id": "refresh-{{ lookup('pipe', 'date +%s') }}",
+          "host": "{{ inventory_hostname }}",
+          "network": "{{ network }}",
+          "station": "{{ station }}",
+          "start": "{{ starttime }}",
+          "end": "{{ endtime }}",
+          "files_processed": "{{ all_files | length }}",
+          "rc": "{{ seedpsd_result.rc }}",
+          "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+        }
+
+    - name: "Save updated job list"
+      copy:
+        content: "{{ (job_list + [new_job]) | to_nice_json }}"
+        dest: "~/.dmtri/jobs/{{ inventory_hostname }}/seedpsd-data.json"
