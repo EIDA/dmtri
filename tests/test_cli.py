@@ -3,6 +3,13 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 from dmtri import cli
 import sys
+from pathlib import Path
+
+
+@pytest.fixture(autouse=True)
+def mock_inventory_path(monkeypatch):
+    """Mock get_inventory_path to return a dummy path during tests."""
+    monkeypatch.setattr("dmtri.cli.get_inventory_path", lambda override=None: Path("/tmp/hosts.ini"))
 
 
 def test_cli_version_flag(capsys):
