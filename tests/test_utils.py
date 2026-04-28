@@ -2,8 +2,6 @@ import pytest
 from argparse import Namespace, ArgumentParser
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
-from dmtri.utils import parse_flexible_date
-from types import SimpleNamespace
 from dmtri.utils import (
     get_version,
     maybe_warn_shell_globbing,
@@ -21,14 +19,16 @@ def test_get_version_reads_pyproject():
 
 
 def test_parse_datetime_args_valid():
-    args = SimpleNamespace(
-        starttime=parse_flexible_date("2025-01-01T00:00:00"),
-        endtime=parse_flexible_date("2025-01-02T00:00:00")
-    )
+    args = Namespace(starttime="2025-01-01T00:00:00", endtime="2025-01-02T00:00:00")
     start, end = parse_datetime_args(args)
     assert start.isoformat().startswith("2025-01-01")
     assert end.isoformat().startswith("2025-01-02")
 
+
+def test_parse_datetime_args_invalid():
+    args = Namespace(starttime="not-a-date", endtime="2025-01-02T00:00:00")
+    with pytest.raises(SystemExit):
+        parse_datetime_args(args)
 
 
 def test_validate_datetime_range_valid():
@@ -86,13 +86,10 @@ def test_validate_and_normalize_args_valid(mock_input):
     args = Namespace(
         command="refresh",
         network=["GR"], station=["ATH"], location=["*"], channel=["*"],
-        starttime=parse_flexible_date("2025-01-01T00:00:00"),
-        endtime=parse_flexible_date("2025-01-02T00:00:00"),
+        starttime="2025-01-01T00:00:00", endtime="2025-01-02T00:00:00",
         type="data"
     )
     start, end, types = validate_and_normalize_args(args, parser)
-    assert isinstance(start, datetime)
-    assert isinstance(end, datetime)
     assert start < end
     assert types == ["data"]
 

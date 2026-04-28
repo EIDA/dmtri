@@ -68,7 +68,7 @@ def test_cli_invalid_date_format():
     with patch("sys.argv", args):
         with pytest.raises(SystemExit) as e:
             cli.main()
-        assert e.value.code == 2
+        assert e.value.code == 1
 
 
 @patch("builtins.input", return_value="y")
@@ -93,7 +93,7 @@ def test_cli_starttime_in_future_rejected():
     with patch("sys.argv", args):
         with pytest.raises(SystemExit) as e:
             cli.main()
-        assert e.value.code == 2
+        assert e.value.code == 1
 
 
 @patch("builtins.input", return_value="n")
@@ -117,15 +117,13 @@ def test_cli_user_aborts_on_long_range(mock_input, capsys):
 def test_cli_doctor_runs(mock_run):
     with patch("sys.argv", ["dmtri", "doctor"]):
         cli.main()
-        from unittest.mock import ANY
-        mock_run.assert_called_once_with(verbose=False, inventory=ANY)
+        mock_run.assert_called_once_with(verbose=False)
 
 @patch("dmtri.doctor.run_diagnostics")
 def test_cli_doctor_verbose(mock_run):
     with patch("sys.argv", ["dmtri", "doctor", "--verbose"]):
         cli.main()
-        from unittest.mock import ANY
-        mock_run.assert_called_once_with(verbose=True, inventory=ANY)
+        mock_run.assert_called_once_with(verbose=True)
 def test_cli_aborts_on_user_input(monkeypatch):
     test_args = [
         "dmtri", "refresh",

@@ -1,0 +1,82 @@
+- name: "Run ws-availability availability update"
+  hosts: ws_availability
+  gather_facts: false
+
+  vars:
+    mongo_script: main.js
+
+  tasks:
+
+    - name: "Ensure required vars are provided"
+      fail:
+        msg: "You must pass 'network', 'station', 'starttime', and 'endtime' via -e"
+      when: network is not defined or station is not defined or starttime is not defined or endtime is not defined
+
+    - name: "Convert starttime/endtime to date-only format"
+      set_fact:
+        start_date: "{{ starttime | regex_replace('T.*$', '') }}"
+        end_date: "{{ endtime | regex_replace('T.*$', '') }}"
+
+    - name: "Preview full mongosh command for verification"
+      debug:
+        msg: >
+          cd {{ availability_dir }} &&
+          mongosh -u {{ mongo_user }} -p {{ mongo_pass }}
+          --authenticationDatabase {{ mongo_authdb }}
+          --eval "networks='{{ network }}'; stations='{{ station }}'; start='{{ start_date }}'; end='{{ end_date }}'" {{ mongo_script }}
+
+    - name: "Run availability script via mongosh"
+      shell: >
+        cd {{ availability_dir }} &&
+        mongosh -u {{ mongo_user }} -p {{ mongo_pass }}
+        --authenticationDatabase {{ mongo_authdb }}
+        --eval "networks='{{ network }}'; stations='{{ station }}'; start='{{ start_date }}'; end='{{ end_date }}'" {{ mongo_script }}
+      args:
+        executable: /bin/bash
+      register: availability_result
+
+    - name: "Show mongosh output"
+      debug:
+        var: availability_result.stdout_lines
+
+    - name: "Track job: keep only latest 'availability' job and preserve others"
+      block:
+
+        - name: Ensure ~/.dmtri/jobs/{{ inventory_hostname }} directory exists
+          file:
+            path: "~/.dmtri/jobs/{{ inventory_hostname }}"
+            state: directory
+            mode: '0755'
+
+        - name: "Load existing job list (if exists)"
+          slurp:
+            src: "~/.dmtri/jobs/{{ inventory_hostname }}/availability.json"
+          register: job_file
+          ignore_errors: true
+
+        - name: "Parse job list or default to []"
+          set_fact:
+            job_list: >-
+              {{ (job_file.content | b64decode | from_json) if job_file.content is defined else [] }}
+
+        - name: "Define new job entry"
+          set_fact:
+            new_job: {
+              "type": "availability",
+              "job_id": "manual-{{ lookup('pipe', 'date +%s') }}",
+              "host": "{{ inventory_hostname }}",
+              "network": "{{ network }}",
+              "station": "{{ station }}",
+              "start": "{{ starttime }}",
+              "end": "{{ endtime }}",
+              "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+            }
+
+        - name: "Remove any previous job of the same type"
+          set_fact:
+            filtered_jobs: "{{ job_list | rejectattr('type', 'equalto', new_job.type) | list }}"
+
+        - name: "Save updated job list (one job per type)"
+          copy:
+            content: "{{ (filtered_jobs + [new_job]) | to_nice_json }}"
+            dest: "~/.dmtri/jobs/{{ inventory_hostname }}/availability.json"
