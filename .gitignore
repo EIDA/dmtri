@@ -25,3 +25,9 @@ src/*.egg-info/
 
 *.ini
 *.env
+
+# User/Agent Documentation
+JOBS_DOCUMENTATION.md
+AGENTS.md
+.antigravity/
+reports/

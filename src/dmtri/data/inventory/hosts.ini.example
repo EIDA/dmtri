@@ -1,0 +1,23 @@
+# hosts.ini.example
+# Replace placeholders with your actual host details
+
+[seedpsd_nodes]
+<SEEDPSD_HOST> ansible_user=<USER> ansible_ssh_pass="<PASSWORD>" ansible_connection=ssh ansible_become=false ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
+[seedpsd_nodes:vars]
+seedpsd_dir=/home/<USER>/seedpsd
+
+[wf_catalogue]
+<WFCATALOG_HOST> ansible_user=<USER> ansible_ssh_pass="<PASSWORD>" ansible_connection=ssh ansible_become=false ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
+[wf_catalogue:vars]
+collector_dir=/home/<USER>/Programs/wfcatalogue<VERSION>/wfcatalog/collector2
+
+[ws_availability]
+<AVAILABILITY_HOST> ansible_user=<USER> ansible_ssh_pass="<PASSWORD>" ansible_connection=ssh ansible_become=false ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
+[ws_availability:vars]
+availability_dir=/home/<USER>/Programs/ws-availability<VERSION>/views
+mongo_user=<MONGO_USERNAME>
+mongo_pass=<MONGO_PASSWORD>
+mongo_authdb=<MONGO_DATABASE>

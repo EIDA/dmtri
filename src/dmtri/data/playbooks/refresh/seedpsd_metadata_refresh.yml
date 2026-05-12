@@ -1,0 +1,142 @@
+- name: Refresh SeedPSD metadata for a given network/station/time range
+  hosts: seedpsd_nodes
+  gather_facts: false
+
+  tasks:
+
+    - name: Ensure 'seedpsd_dir' is defined for this host
+      fail:
+        msg: "'seedpsd_dir' must be set in the inventory for {{ inventory_hostname }}"
+      when: seedpsd_dir is not defined
+
+    - name: Ensure required variables are provided
+      fail:
+        msg: "You must pass 'network', 'station', 'starttime', and 'endtime' via -e"
+      when: network is not defined or station is not defined or starttime is not defined or endtime is not defined
+
+    - name: Set defaults for optional variables
+      set_fact:
+        network: "{{ network | default('*') }}"
+        station: "{{ station | default('*') }}"
+        location: "{{ location | default('*') }}"
+        channel: "{{ channel | default('*') }}"
+
+    - name: Set derived dates
+      set_fact:
+        start_date: "{{ starttime | regex_replace('T.*$', '') }}"
+        end_date: "{{ endtime | regex_replace('T.*$', '') }}"
+        network_list: "{{ [network] | flatten | join(',') }}"
+        station_list: "{{ [station] | flatten | join(',') }}"
+        channel_list: "{{ [channel] | flatten | join(',') }}"
+
+    - name: Set log path
+      set_fact:
+        log_path: "{{ seedpsd_dir }}/log/SeedPSD-metadata-{{ network_list | regex_replace(',', '_') }}-{{ station_list | regex_replace(',', '_') }}-{{ start_date }}.log"
+
+    - name: Ensure SeedPSD log directory exists
+      file:
+        path: "{{ seedpsd_dir }}/log"
+        state: directory
+        mode: '0755'
+
+    - name: "[DEBUG] Show metadata refresh parameters"
+      debug:
+        msg:
+          - "========================================"
+          - " SeedPSD Metadata Refresh — Parameters"
+          - "========================================"
+          - "  Host       : {{ inventory_hostname }}"
+          - "  Network    : {{ network }}"
+          - "  Station    : {{ station }}"
+          - "  Location   : {{ location }}"
+          - "  Channel    : {{ channel }}"
+          - "  Start date : {{ start_date }}"
+          - "  End date   : {{ end_date }}"
+          - "  Log file   : {{ log_path }}"
+          - "========================================"
+          - "  PRO TIP: You can monitor progress live on the server with:"
+          - "  tail -f {{ log_path }}.live"
+          - "========================================"
+
+
+    - name: Run seedpsd-cli metadata update
+      shell: |
+        set -o pipefail
+        cd {{ seedpsd_dir }} && \
+        uv run seedpsd-cli metadata update \
+          --network '{{ network_list }}' \
+          --station '{{ station_list }}' \
+          --location '{{ location }}' \
+          --channel '{{ channel_list }}' \
+          2>&1 | tee {{ log_path }}.live
+      args:
+        executable: /bin/bash
+      async: 3600
+      poll: 10
+      register: metadata_result
+
+    - name: Read live log file after metadata update finishes
+      slurp:
+        src: "{{ log_path }}.live"
+      register: live_log
+      ignore_errors: true
+
+    - name: "DISPLAY METADATA REFRESH RESULTS"
+      debug:
+        msg:
+          - "========================================"
+          - " SeedPSD Metadata — Results"
+          - "========================================"
+          - "  Status   : {{ 'SUCCESS' if metadata_result.rc == 0 else 'FAILED' }}"
+          - "  Log File : {{ log_path }}"
+          - "----------------------------------------"
+          - "  Summary  :"
+          - "{{ (live_log.content | b64decode | regex_findall('\\[INFO\\] (.*)', multiline=True) | length > 0) | ternary((live_log.content | b64decode | regex_findall('\\[INFO\\] (.*)', multiline=True)) | join('\n  - '), 'No informative logs found') }}"
+          - "========================================"
+      when: true
+
+    # ---------------------------------------------------------------
+    # JOB TRACKING
+    # ---------------------------------------------------------------
+
+    - name: Ensure ~/.dmtri/jobs/{{ inventory_hostname }} directory exists
+      file:
+        path: "~/.dmtri/jobs/{{ inventory_hostname }}"
+        state: directory
+        mode: '0755'
+
+    - name: "Load existing job list (if exists)"
+      slurp:
+        src: "~/.dmtri/jobs/{{ inventory_hostname }}/seedpsd-metadata.json"
+      register: job_file
+      ignore_errors: true
+
+    - name: "Parse job list or default to []"
+      set_fact:
+        job_list: >-
+          {{ (job_file.content | b64decode | from_json) if job_file.content is defined else [] }}
+
+    - name: Define new job entry
+      set_fact:
+        new_job: {
+          "type": "seedpsd_metadata_refresh",
+          "job_id": "metadata-{{ lookup('pipe', 'date +%s') }}",
+          "host": "{{ inventory_hostname }}",
+          "network": "{{ network }}",
+          "station": "{{ station }}",
+          "location": "{{ location }}",
+          "channel": "{{ channel }}",
+          "start": "{{ starttime }}",
+          "end": "{{ endtime }}",
+          "rc": "{{ metadata_result.rc | default('unknown') }}",
+          "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+        }
+
+    - name: "Save updated job list"
+      copy:
+        content: "{{ (job_list + [new_job]) | to_nice_json }}"
+        dest: "~/.dmtri/jobs/{{ inventory_hostname }}/seedpsd-metadata.json"
+
+    - name: "Job tracking summary"
+      debug:
+        msg: "Job {{ new_job.job_id }} recorded for {{ inventory_hostname }}"

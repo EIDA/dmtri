@@ -14,126 +14,90 @@ It uses `.dmtri_jobs.json` per host to track async job state and integrates with
 
 ---
 
-## Quick Start
+## Installation & Setup
 
-You can use `dmtri` in two ways, depending on your preference:
+### 1. Install or Run
+You can run `dmtri` directly or install it as a tool:
 
-### Option 1: Using `uvx`
-
-You can run commands using:
-
+#### Run without installing (via `uvx`)
 ```bash
-uvx dmtri <command> [options]
-
+uvx dmtri <command>
 ```
 
----
-
-### Option 2: Global (Tool-based) — Ideal for global CLI use
-
+#### Install as a global tool
 ```bash
+# Using uv (recommended)
 uv tool install dmtri
+
+# Using pip
+pip install dmtri
 ```
 
-This makes `dmtri` available globally:
+### 2. Configure
+Once installed, set up your local configuration directory:
 
 ```bash
-dmtri <command> [options]
-
+dmtri init
 ```
 
-You can update it any time using:
+This creates a config folder (e.g., `~/.config/dmtri/` on Linux) with a template `hosts.ini` and all standard playbooks.
+
+#### Edit your Inventory
+Use `nano` (or any text editor) to fill in your EIDA server details:
 
 ```bash
-uv tool upgrade dmtri
+nano ~/.config/dmtri/hosts.ini
+```
+
+#### Verify Connectivity
+Check if your servers are reachable:
+
+```bash
+dmtri doctor
 ```
 
 ---
 
-### 2. Configure inventory
+## Usage
 
-Edit the file: `src/inventory/hosts.ini`
+### Run Refresh Jobs
+Trigger refresh playbooks across your nodes:
 
-Example:
+```bash
+dmtri refresh --network HL --station ATH --starttime 2024-01-01
+```
 
-```ini
-[seedpsd_nodes]
-<SEEDPSD_HOST> ansible_user=<USER> ansible_ssh_pass="<PASSWORD>" ansible_connection=ssh ansible_become=false ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+### Track Job Status
+Monitor the status of asynchronous jobs:
 
-[seedpsd_nodes:vars]
-seedpsd_dir=/home/<USER>/seedpsd
-
-[wf_catalogue]
-<WFCATALOG_HOST> ansible_user=<USER> ansible_ssh_pass="<PASSWORD>" ansible_connection=ssh ansible_become=false ansible_ssh_common_args='-o StrictHostKeyChecking=no'
-
-[wf_catalogue:vars]
-collector_dir=/home/<USER>/Programs/wfcatalogue<VERSION>/wfcatalog/collector2
-
-[ws_availability]
-<AVAILABILITY_HOST> ansible_user=<USER> ansible_ssh_pass="<PASSWORD>" ansible_connection=ssh ansible_become=false ansible_ssh_common_args='-o StrictHostKeyChecking=no'
-
-[ws_availability:vars]
-availability_dir=/home/<USER>/Programs/ws-availability<VERSION>/views
-mongo_user=<MONGO_USERNAME>
-mongo_pass=<MONGO_PASSWORD>
-mongo_authdb=<MONGO_DATABASE>
-
+```bash
+dmtri track
 ```
 
 ---
 
-### 3. Run example jobs
+## Customization
 
-By default, this command runs **all refresh playbooks** (seedpsd, wfcatalog, and availability):
+### Local Playbooks
+`dmtri init` copies all playbooks to your config directory. You can edit them to change automation logic:
 
 ```bash
-uv run dmtri refresh --network HL --station ATH --starttime 2024-01-01T00:00:00 --endtime 2024-01-02T00:00:00
+# Location: ~/.config/dmtri/playbooks/
+nano ~/.config/dmtri/playbooks/refresh/availability_refresh.yml
+```
 
+`dmtri` prioritizes these local playbooks over the bundled defaults.
+
+### Inventory Overrides
+Override the inventory at runtime:
+
+```bash
+dmtri doctor --inventory ./my_custom_hosts.ini
 ```
 
 ---
 
-### 4. Track jobs across hosts
-
-```bash
-uv run dmtri track
-```
-
-Shows per-host job status:
-```
-Job ID: j123... Type: seedpsd  Station: ATH  Status: ✅ Finished
-Job ID: manual-... Type: availability  Status: ✅ Manual (not tracked)
-```
-
----
-
-### 5. Troubleshooting with `dmtri doctor`
-
-Check SSH connectivity to your configured hosts using:
-
-```bash
-uv run dmtri doctor
-```
-
-This uses the Ansible `ping` module to test access to all servers in your inventory.
-
-#### Options
-
-- `--verbose` — Show full output from each host
-
-#### Example
-
-```bash
-uv run dmtri doctor --verbose
-```
-
-If no response is received, ensure:
-
-- You're connected to the VPN (if applicable)
-- SSH access is configured correctly in your inventory file
-- Host IPs and credentials are reachable and valid
-
-###  Operation Details
+## Operation Details
 
 `dmtri` supports two main operations for both metadata and data: `refresh` and `clean`. These affect the following components:
 
