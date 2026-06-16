@@ -86,6 +86,10 @@ PLAYBOOK_WFCATALOG_REFRESH = _resolve_playbook("refresh/wfcatalog_refresh.yml")
 PLAYBOOK_AVAILABILITY_REFRESH = _resolve_playbook("refresh/availability_refresh.yml")
 PLAYBOOK_METADATA_REFRESH  = _resolve_playbook("refresh/seedpsd_metadata_refresh.yml")
 
+# Consistency-repair (dmtri fix): reuses wfcatalog_refresh, plus a scoped
+# availability rebuild (docker exec avail-rebuild) instead of the global restart.
+PLAYBOOK_AVAILABILITY_REBUILD = _resolve_playbook("fix/availability_rebuild.yml")
+
 PLAYBOOK_SEEDPSD_CLEAN      = _resolve_playbook("clean/seedpsd_clean.yml")
 PLAYBOOK_WFCATALOG_CLEAN    = _resolve_playbook("clean/wfcatalog_clean.yml")
 PLAYBOOK_AVAILABILITY_CLEAN = _resolve_playbook("clean/availability_clean.yml")

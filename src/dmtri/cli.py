@@ -53,6 +53,14 @@ def main():
 
     subparsers.add_parser("refresh", parents=[shared], help="Refresh data/metadata using configured playbooks.")
     subparsers.add_parser("clean", parents=[shared], help="Clean outdated data/metadata using configured playbooks.")
+
+    fix_parser = subparsers.add_parser("fix", help="Automatically repair inconsistencies from an eida-consistency report.")
+    fix_parser.add_argument("report", help="Consistency report: URL or local JSON path")
+    fix_parser.add_argument("--verify-only", action="store_true", help="Only re-check status (no rebuilding)")
+    fix_parser.add_argument("--days", type=int, default=None, help="Max days to explore boundaries (passthrough to eida-consistency)")
+    fix_parser.add_argument("--index", type=int, action="append", dest="index", help="Restrict to specific report index(es); repeatable")
+    fix_parser.add_argument("--no-confirm", action="store_true", help="Skip confirmation prompt before executing")
+    fix_parser.add_argument("--debug", action="store_true", help="Show verbose output from Ansible")
     subparsers.add_parser("track", help="Track job status via tracking playbook.")
     doctor_parser = subparsers.add_parser("doctor", help="Check SSH connectivity to all inventory hosts")
     doctor_parser.add_argument("-v", "--verbose", action="store_true", help="Show full Ansible output per host")
@@ -121,6 +129,20 @@ def main():
 
         for pb in playbooks:
             run_hook(pb, vars_to_pass, inventory=inventory_path)
+
+    elif args.command == "fix":
+        from dmtri.fix import run_fix, run_verify_only
+        try:
+            if args.verify_only:
+                rc = run_verify_only(args.report, inventory=inventory_path,
+                                     days=args.days, indices=args.index)
+            else:
+                rc = run_fix(args.report, inventory=inventory_path, days=args.days,
+                             indices=args.index, no_confirm=args.no_confirm, debug=args.debug)
+        except RuntimeError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(2)
+        sys.exit(rc)
 
     elif args.command == "track":
         playbooks = COMMAND_PLAYBOOKS.get("track", [])
