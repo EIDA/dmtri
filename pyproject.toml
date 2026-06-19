@@ -1,6 +1,6 @@
 [project]
-name = "eida-dmtri"
-version = "0.1.0"
+name = "dmtri"
+version = "0.1.1"
 description = "CLI tool for triggering datacenter metadata updates"
 authors = [{ name = "Nikos Sokos", email = "nsokos@noa.com" }]
 dependencies = [

@@ -6,9 +6,15 @@ from dmtri.paths import INVENTORY_FILE
 
 
 logger = logging.getLogger(__name__)
-def run_hook(playbook_name: Path, vars: dict,inventory: Path = INVENTORY_FILE) -> None:
+def run_hook(playbook_name: Path, vars: dict, inventory: Path = INVENTORY_FILE,
+             exit_on_error: bool = True) -> int:
     """
     Run an Ansible playbook using ansible_runner.run_command, bypassing the project layout.
+
+    Returns the playbook return code. By default (exit_on_error=True) it preserves
+    the historical behavior of refresh/clean — sys.exit(rc) on failure. Callers that
+    orchestrate a multi-step batch (e.g. `dmtri fix`) pass exit_on_error=False so one
+    failed stream does not abort the whole run; they inspect the returned rc instead.
     """
 
     # Build the extra vars string manually
@@ -40,6 +46,9 @@ def run_hook(playbook_name: Path, vars: dict,inventory: Path = INVENTORY_FILE) -
 
     if rc != 0:
         logger.error(f"Playbook {playbook_name} failed with return code {rc}")
-        sys.exit(rc)
-    
+        if exit_on_error:
+            sys.exit(rc)
+        return rc
+
     logger.info(f"Playbook {playbook_name} completed successfully")
+    return rc

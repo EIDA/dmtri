@@ -29,5 +29,18 @@ src/*.egg-info/
 # User/Agent Documentation
 JOBS_DOCUMENTATION.md
 AGENTS.md
-.antigravity/
 reports/
+
+# AI assistant folders / files
+.antigravity/
+.claude/
+.cursor/
+.windsurf/
+.aider*
+CLAUDE.md
+GEMINI.md
+.clinerules/
+
+# Demo recordings (asciinema casts and rendered GIFs)
+*.cast
+*.gif

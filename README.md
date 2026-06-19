@@ -74,6 +74,45 @@ Monitor the status of asynchronous jobs:
 dmtri track
 ```
 
+### Fix Inconsistencies
+Automatically repair the inconsistencies found in an [`eida-consistency`](https://github.com/EIDA/eida-consistency) report. A report lists streams where the **availability** view and **dataselect** disagree; `dmtri fix` reads that report and, for each affected stream, re-runs the WFCatalog collector and rebuilds the availability view for the exact time window.
+
+Point it at a report file or URL:
+
+```bash
+dmtri fix https://eida-oculus.orfeus-eu.org/consistency/NOA/2026/NOA_2026-06-07_140510.json
+```
+
+Fix only specific entries from the report (by their index):
+
+```bash
+dmtri fix report.json --index 2 --index 16
+```
+
+After a fix, the availability service keeps cached answers for ~20 minutes, so a stream may still look unfixed for a short while. Re-check once the cache expires — this only verifies, it changes nothing:
+
+```bash
+dmtri fix --verify-only report.json
+```
+
+#### Prerequisite: the `eida-consistency` CLI
+
+`dmtri fix` reads the report through [`eida-consistency`](https://github.com/EIDA/eida-consistency) (version **0.5.1 or newer**, for its `explore --json` output). If it isn't already on the machine, install it any one of these ways:
+
+```bash
+uv tool install eida-consistency     # recommended — puts it on your PATH
+pipx install eida-consistency
+pip install eida-consistency
+```
+
+You don't strictly have to install it: if `uv` is present, `dmtri fix` will run it on demand via `uvx eida-consistency`. And if it's installed somewhere off your `PATH`, point dmtri at it:
+
+```bash
+export DMTRI_EIDA_CONSISTENCY='/full/path/to/eida-consistency'
+```
+
+If it's missing (or too old), `dmtri fix` stops before touching anything and prints the exact install/upgrade command to run.
+
 ---
 
 ## Customization

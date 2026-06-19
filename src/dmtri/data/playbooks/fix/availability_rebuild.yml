@@ -1,0 +1,89 @@
+- name: "Rebuild availability materialized view for a specific NSLC + date range"
+  hosts: ws_availability
+  gather_facts: false
+
+  # Expected extra-vars (one stream, one range — dmtri fix calls this once per fix):
+  #   net, sta, cha   : exact codes
+  #   loc             : location code; pass "--" for the empty location
+  #   start, end      : YYYY-MM-DD. `end` is exclusive at the cacher (te <= end),
+  #                     so dmtri passes the day AFTER the last broken day.
+  #
+  # Unlike availability_refresh.yml (a global `docker restart` = last-24h rebuild),
+  # this triggers the in-container `avail-rebuild` console script, which rebuilds
+  # only the given stream/range from WFCatalog (idempotent $merge).
+
+  tasks:
+
+    # command + argv (not shell): values are passed as separate execve arguments,
+    # so even if a report-derived value contained shell metacharacters it cannot be
+    # interpreted by a shell. dmtri also validates these against strict allow-lists
+    # before they ever reach here (see fix._validate_fix).
+    - name: "Run scoped availability rebuild (docker exec avail-rebuild)"
+      command:
+        argv:
+          - docker
+          - exec
+          - fdsnws-availability-cacher
+          - avail-rebuild
+          - --net
+          - "{{ net }}"
+          - --sta
+          - "{{ sta }}"
+          - "--loc={{ loc }}"
+          - --cha
+          - "{{ cha }}"
+          - --start
+          - "{{ start }}"
+          - --end
+          - "{{ end }}"
+      register: rebuild_result
+
+    - name: "DISPLAY REBUILD STATUS"
+      debug:
+        msg:
+          - "========================================"
+          - " Availability Rebuild — {{ net }}.{{ sta }}.{{ loc }}.{{ cha }}"
+          - "========================================"
+          - "  Range    : {{ start }} -> {{ end }} (end exclusive)"
+          - "  Status   : {{ 'SUCCESS' if rebuild_result.rc == 0 else 'FAILED' }}"
+          - "  Exit Code: {{ rebuild_result.rc }}"
+          - "========================================"
+
+    # ---------------------------------------------------------------
+    # JOB TRACKING
+    # ---------------------------------------------------------------
+
+    - name: Ensure ~/.dmtri/jobs/{{ inventory_hostname }} directory exists
+      file:
+        path: "~/.dmtri/jobs/{{ inventory_hostname }}"
+        state: directory
+        mode: '0755'
+
+    - name: "Load existing job list (if exists)"
+      slurp:
+        src: "~/.dmtri/jobs/{{ inventory_hostname }}/availability.json"
+      register: job_file
+      ignore_errors: true
+
+    - name: "Parse job list or default to []"
+      set_fact:
+        job_list: >-
+          {{ (job_file.content | b64decode | from_json) if job_file.content is defined else [] }}
+
+    - name: Define new job entry
+      set_fact:
+        new_job: {
+          "type": "availability_rebuild",
+          "job_id": "rebuild-{{ lookup('pipe', 'date +%s') }}",
+          "host": "{{ inventory_hostname }}",
+          "stream": "{{ net }}.{{ sta }}.{{ loc }}.{{ cha }}",
+          "start": "{{ start }}",
+          "end": "{{ end }}",
+          "rc": "{{ rebuild_result.rc | default('unknown') }}",
+          "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+        }
+
+    - name: "Save updated job list"
+      copy:
+        content: "{{ (job_list + [new_job]) | to_nice_json }}"
+        dest: "~/.dmtri/jobs/{{ inventory_hostname }}/availability.json"
