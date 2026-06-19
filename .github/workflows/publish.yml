@@ -70,7 +70,7 @@ jobs:
             echo "Configure it with exactly:"
             echo "- **Owner:** \`EIDA\`"
             echo "- **Repository:** \`dmtri\`"
-            echo "- **Workflow:** \`pypi.yml\`"
+            echo "- **Workflow:** \`publish.yml\`"
             echo "- **Environment:** _(leave blank)_"
             echo ""
             echo "Once configured, re-run this workflow to publish \`${REF_NAME}\` (the version number is still free)."
