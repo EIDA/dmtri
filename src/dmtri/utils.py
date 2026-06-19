@@ -9,7 +9,7 @@ from importlib.metadata import version, PackageNotFoundError
 def get_version():
     try:
         # Try to get version from installed package metadata
-        return version("eida-dmtri")
+        return version("dmtri")
     except PackageNotFoundError:
         # Fallback for local development where the package might not be installed
         try:
