@@ -28,6 +28,24 @@ def test_cli_no_command_prints_help(capsys):
     captured = capsys.readouterr()
     assert "usage" in captured.out.lower()
 
+@patch("dmtri.init.run_init")
+def test_cli_init_runs_before_inventory_resolution(mock_run_init, monkeypatch):
+    """Regression: `init` must run before inventory resolution.
+
+    Otherwise a brand-new user with no hosts.ini can never bootstrap, because
+    get_inventory_path() exits with "No inventory file found. Run dmtri init"
+    — the very command they just ran.
+    """
+    def _no_inventory(override=None):
+        raise SystemExit(1)
+    monkeypatch.setattr("dmtri.cli.get_inventory_path", _no_inventory)
+
+    with patch("sys.argv", ["dmtri", "init"]):
+        cli.main()  # must NOT raise SystemExit from get_inventory_path
+
+    mock_run_init.assert_called_once()
+
+
 @patch("dmtri.cli.run_hook")
 def test_cli_refresh_no_confirm_runs(mock_run_hook):
     with patch("builtins.input", return_value="y"):

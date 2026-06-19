@@ -1,6 +1,6 @@
 [project]
 name = "dmtri"
-version = "0.1.1"
+version = "0.1.2"
 description = "CLI tool for triggering datacenter metadata updates"
 authors = [{ name = "Nikos Sokos", email = "nsokos@noa.com" }]
 dependencies = [

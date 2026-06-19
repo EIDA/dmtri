@@ -69,6 +69,14 @@ def main():
     init_parser.add_argument("--force", action="store_true", help="Overwrite existing user config files")
 
     args = parser.parse_args()
+
+    # `init` scaffolds the config (including the inventory), so it must run
+    # before any inventory resolution — otherwise a brand-new user can never
+    # bootstrap, since get_inventory_path() exits when no inventory exists.
+    if args.command == "init":
+        from dmtri.init import run_init
+        return run_init(force=args.force)
+
     if args.command == "track":
         cfg_path = ANSIBLE_TRACK_CFG
     else:
@@ -76,10 +84,6 @@ def main():
 
     os.environ["ANSIBLE_CONFIG"] = str(cfg_path.resolve())
     inventory_path = get_inventory_path(args.inventory)
-
-    if args.command == "init":
-        from dmtri.init import run_init
-        return run_init(force=args.force)
 
     if args.command == "doctor":
         from dmtri.doctor import run_diagnostics
