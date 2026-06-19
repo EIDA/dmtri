@@ -48,7 +48,33 @@ jobs:
           path: dist/
 
       - name: Publish to PyPI
+        id: publish
+        continue-on-error: true
         uses: pypa/gh-action-pypi-publish@v1.12.4
+
+      - name: Notify if PyPI publish failed
+        if: steps.publish.outcome == 'failure'
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          echo "::warning title=PyPI publish failed::Trusted publisher not configured for the 'dmtri' project on PyPI."
+          {
+            echo "## ⚠️ PyPI publish failed — trusted publisher not configured"
+            echo ""
+            echo "The build and GitHub release for \`${REF_NAME}\` succeeded, but the upload to PyPI was rejected (\`invalid-publisher\`)."
+            echo ""
+            echo "**@Jonathan (PyPI admin): please rebuild the GitHub Actions trusted publisher for the \`dmtri\` project.**"
+            echo ""
+            echo "Settings page: https://pypi.org/manage/project/dmtri/settings/publishing/"
+            echo ""
+            echo "Configure it with exactly:"
+            echo "- **Owner:** \`EIDA\`"
+            echo "- **Repository:** \`dmtri\`"
+            echo "- **Workflow:** \`pypi.yml\`"
+            echo "- **Environment:** _(leave blank)_"
+            echo ""
+            echo "Once configured, re-run this workflow to publish \`${REF_NAME}\` (the version number is still free)."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   github-release:
     if: startsWith(github.ref, 'refs/tags/')
