@@ -60,20 +60,40 @@ def _explore_base_cmd() -> list[str]:
 
 
 def get_fixes(report: str, days: int | None = None,
-              indices: list[int] | None = None) -> dict:
+              indices: list[int] | None = None, verbose: bool = False) -> dict:
     """Run `eida-consistency explore --json` and return the parsed result dict.
+
+    With ``verbose=True`` we ask explore for its per-query log (``--verbose``) and
+    let that progress stream straight to our stderr instead of capturing it, so the
+    user can watch the exploration happen. stdout is still captured either way
+    (it must stay pure JSON for parsing).
 
     Raises RuntimeError on a non-zero exit, unparseable output, or an
     incompatible schema major version.
     """
     cmd = _explore_base_cmd() + ["explore", "--json", report]
+    if verbose:
+        cmd += ["--verbose"]
     if days is not None:
         cmd += ["--days", str(days)]
     for i in indices or []:
         cmd += ["--index", str(i)]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    # explore re-probes every inconsistent stream against the live node, so it can
+    # run for minutes. We capture its output (stdout must stay pure JSON), which
+    # means the user sees nothing while it works — tell them it's running so the
+    # silent wait doesn't look like a hang.
+    print(f"⏳ Running eida-consistency explore on {report} …", file=sys.stderr, flush=True)
+    print("   (re-checking each stream against the live node; this can take a few minutes)",
+          file=sys.stderr, flush=True)
+    if verbose:
+        # Stream explore's progress (stderr) live; still capture stdout for JSON.
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, text=True)
+    else:
+        proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
+        # In verbose mode stderr already went to the terminal, so it is not on the
+        # proc object — fall back to whatever leaked onto stdout.
         combined = (proc.stderr or "") + (proc.stdout or "")
         # An eida-consistency too old to know `--json` rejects the flag with a
         # "No such option: --json" usage error. Turn that into an upgrade hint
@@ -107,6 +127,8 @@ def get_fixes(report: str, days: int | None = None,
             f"explore --json schema_version {version!r} is incompatible with this "
             f"dmtri (expects {SUPPORTED_SCHEMA_MAJOR}.x). Update dmtri or eida-consistency."
         )
+    print(f"✓ explore finished — {len(result.get('fixes', []))} fix candidate(s) "
+          f"for node {result.get('node', '?')}", file=sys.stderr, flush=True)
     return result
 
 
@@ -198,12 +220,12 @@ def _partition(result: dict) -> dict:
     }
 
 
-def run_verify_only(report: str, inventory, days=None, indices=None) -> int:
+def run_verify_only(report: str, inventory, days=None, indices=None, verbose=False) -> int:
     """Re-probe via explore --json and report which rows are now fixed. No playbooks.
 
     Returns 0 if nothing remains actionable (all healed), else 1.
     """
-    parts = _partition(get_fixes(report, days, indices))
+    parts = _partition(get_fixes(report, days, indices, verbose=verbose))
     still = parts["refresh"] + parts["clean"]
     print(f"\nVerify ({parts['node']}): "
           f"{len(parts['fixed'])} fixed, {len(still)} still inconsistent, "
@@ -216,9 +238,9 @@ def run_verify_only(report: str, inventory, days=None, indices=None) -> int:
 
 
 def run_fix(report: str, inventory, days=None, indices=None,
-            no_confirm=False, debug=False) -> int:
+            no_confirm=False, debug=False, verbose=False) -> int:
     """Drive the repair chain for every actionable refresh-direction fix."""
-    parts = _partition(get_fixes(report, days, indices))
+    parts = _partition(get_fixes(report, days, indices, verbose=verbose))
     targets = parts["refresh"]
 
     if parts["clean"]:

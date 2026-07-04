@@ -8,6 +8,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
 
     steps:
       - name: Checkout Repository
@@ -20,20 +24,24 @@ jobs:
 
       - name: Run Pytest with Coverage
         run: |
-          uv run pytest --cov=src --cov-report=term --cov-report=xml
+          uv run --python ${{ matrix.python-version }} pytest --cov=src --cov-report=term --cov-report=xml
 
+      # The badge is generated once, from a single interpreter, to avoid
+      # matrix jobs racing to commit badges/coverage.svg.
       - name: Generate SVG Coverage Badge
+        if: matrix.python-version == '3.13'
         uses: tj-actions/coverage-badge-py@v2
         with:
           output: coverage.svg
 
       - name: Move badge to badges/ directory
+        if: matrix.python-version == '3.13'
         run: |
           mkdir -p badges
           mv coverage.svg badges/coverage.svg
 
       - name: Commit and push badge
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && matrix.python-version == '3.13'
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"

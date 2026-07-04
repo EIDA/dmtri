@@ -47,6 +47,22 @@ def test_cli_init_runs_before_inventory_resolution(mock_run_init, monkeypatch):
 
 
 @patch("dmtri.cli.run_hook")
+def test_cli_clean_reports_not_implemented(mock_run_hook, capsys):
+    """`clean` is deferred: it must fail clearly and never run a playbook."""
+    args = [
+        "dmtri", "clean",
+        "--network", "GR", "--station", "ATH",
+        "--starttime", "2025-01-01T00:00:00",
+    ]
+    with patch("sys.argv", args):
+        with pytest.raises(SystemExit) as e:
+            cli.main()
+    assert e.value.code == 2
+    assert "not yet implemented" in capsys.readouterr().err.lower()
+    mock_run_hook.assert_not_called()
+
+
+@patch("dmtri.cli.run_hook")
 def test_cli_refresh_no_confirm_runs(mock_run_hook):
     with patch("builtins.input", return_value="y"):
         args = [

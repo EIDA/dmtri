@@ -1,6 +1,6 @@
 [project]
 name = "dmtri"
-version = "0.1.4"
+version = "0.1.5"
 description = "CLI tool for triggering datacenter metadata updates"
 authors = [{ name = "Nikos Sokos", email = "nsokos@noa.gr" }]
 license = "GPL-3.0-or-later"
@@ -15,7 +15,12 @@ dependencies = [
     "tomli>=2.2.1; python_version < '3.11'",
 ]
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
+
+[project.urls]
+Homepage = "https://github.com/EIDA/dmtri"
+Repository = "https://github.com/EIDA/dmtri"
+Issues = "https://github.com/EIDA/dmtri/issues"
 [dependency-groups]
 dev = [
   "pytest",

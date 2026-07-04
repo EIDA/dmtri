@@ -52,7 +52,7 @@ def main():
     shared.add_argument("--debug", action="store_true", help="Show verbose output from Ansible")
 
     subparsers.add_parser("refresh", parents=[shared], help="Refresh data/metadata using configured playbooks.")
-    subparsers.add_parser("clean", parents=[shared], help="Clean outdated data/metadata using configured playbooks.")
+    subparsers.add_parser("clean", parents=[shared], help="(not yet implemented) Clean outdated data/metadata.")
 
     fix_parser = subparsers.add_parser("fix", help="Automatically repair inconsistencies from an eida-consistency report.")
     fix_parser.add_argument("report", help="Consistency report: URL or local JSON path")
@@ -60,6 +60,7 @@ def main():
     fix_parser.add_argument("--days", type=int, default=None, help="Max days to explore boundaries (passthrough to eida-consistency)")
     fix_parser.add_argument("--index", type=int, action="append", dest="index", help="Restrict to specific report index(es); repeatable")
     fix_parser.add_argument("--no-confirm", action="store_true", help="Skip confirmation prompt before executing")
+    fix_parser.add_argument("-v", "--verbose", action="store_true", help="Stream eida-consistency explore progress (per-query URLs) live instead of waiting silently")
     fix_parser.add_argument("--debug", action="store_true", help="Show verbose output from Ansible")
     subparsers.add_parser("track", help="Track job status via tracking playbook.")
     doctor_parser = subparsers.add_parser("doctor", help="Check SSH connectivity to all inventory hosts")
@@ -89,7 +90,16 @@ def main():
         from dmtri.doctor import run_diagnostics
         return run_diagnostics(verbose=args.verbose, inventory=inventory_path)
 
-    elif args.command in ("refresh", "clean"):
+    elif args.command == "clean":
+        # `clean` is intentionally deferred: its playbooks are not yet
+        # implemented. Fail clearly instead of running empty playbooks.
+        print(
+            "`dmtri clean` is not yet implemented and is planned for a future release.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    elif args.command == "refresh":
         start_dt, end_dt, types = validate_and_normalize_args(args, parser)
 
         vars_to_pass = {
@@ -103,21 +113,17 @@ def main():
             "debug": args.debug,
         }
 
+        selected_types = vars_to_pass["type"]
+        valid_types = set(COMMAND_PLAYBOOKS["refresh"].keys())
 
-        if args.command == "refresh":
-            selected_types = vars_to_pass["type"]
-            valid_types = set(COMMAND_PLAYBOOKS["refresh"].keys())
+        invalid = set(selected_types) - valid_types
+        if invalid:
+            print(f" Invalid --type: {', '.join(invalid)}. Valid types are: {', '.join(valid_types)}.")
+            sys.exit(1)
 
-            invalid = set(selected_types) - valid_types
-            if invalid:
-                print(f" Invalid --type: {', '.join(invalid)}. Valid types are: {', '.join(valid_types)}.")
-                sys.exit(1)
-
-            playbooks = []
-            for t in selected_types:
-                playbooks.extend(COMMAND_PLAYBOOKS["refresh"][t])
-        else:
-            playbooks = COMMAND_PLAYBOOKS.get("clean", [])
+        playbooks = []
+        for t in selected_types:
+            playbooks.extend(COMMAND_PLAYBOOKS["refresh"][t])
 
         if not playbooks:
             print(f"No playbooks configured for command '{args.command}'.")
@@ -139,10 +145,11 @@ def main():
         try:
             if args.verify_only:
                 rc = run_verify_only(args.report, inventory=inventory_path,
-                                     days=args.days, indices=args.index)
+                                     days=args.days, indices=args.index, verbose=args.verbose)
             else:
                 rc = run_fix(args.report, inventory=inventory_path, days=args.days,
-                             indices=args.index, no_confirm=args.no_confirm, debug=args.debug)
+                             indices=args.index, no_confirm=args.no_confirm,
+                             debug=args.debug, verbose=args.verbose)
         except RuntimeError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(2)

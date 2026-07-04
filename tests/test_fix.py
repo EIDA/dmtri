@@ -31,6 +31,37 @@ def test_get_fixes_parses_json(monkeypatch):
     assert result["fixes"][0]["channel"] == "BHZ"
 
 
+def test_get_fixes_verbose_streams_and_passes_flag(monkeypatch):
+    """verbose=True adds --verbose to explore and streams (does not capture stderr)."""
+    captured = {}
+
+    def fake_run(cmd, **k):
+        captured["cmd"] = cmd
+        captured["kwargs"] = k
+        return _fake_proc(stdout=json.dumps(_sample()))
+
+    monkeypatch.setattr(fix, "_explore_base_cmd", lambda: ["eida-consistency"])
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    fix.get_fixes("report.json", verbose=True)
+    assert "--verbose" in captured["cmd"]
+    # streaming mode captures stdout only, not capture_output
+    assert captured["kwargs"].get("stdout") == subprocess.PIPE
+    assert "capture_output" not in captured["kwargs"]
+
+
+def test_get_fixes_non_verbose_omits_flag(monkeypatch):
+    captured = {}
+
+    def fake_run(cmd, **k):
+        captured["cmd"] = cmd
+        return _fake_proc(stdout=json.dumps(_sample()))
+
+    monkeypatch.setattr(fix, "_explore_base_cmd", lambda: ["eida-consistency"])
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    fix.get_fixes("report.json")
+    assert "--verbose" not in captured["cmd"]
+
+
 def test_get_fixes_nonzero_exit_raises(monkeypatch):
     monkeypatch.setattr(fix, "_explore_base_cmd", lambda: ["eida-consistency"])
     monkeypatch.setattr(subprocess, "run",
