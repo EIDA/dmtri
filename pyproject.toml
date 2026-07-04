@@ -1,8 +1,10 @@
 [project]
 name = "dmtri"
-version = "0.1.2"
+version = "0.1.3"
 description = "CLI tool for triggering datacenter metadata updates"
-authors = [{ name = "Nikos Sokos", email = "nsokos@noa.com" }]
+authors = [{ name = "Nikos Sokos", email = "nsokos@noa.gr" }]
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 dependencies = [
     "ansible>=6.7.0",
     "ansible-runner>=2.3.6",
@@ -28,5 +30,5 @@ dmtri = "dmtri.cli:main"
 dmtri = ["data/**/*"]
 
 [build-system]
-requires = ["setuptools>=62.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"

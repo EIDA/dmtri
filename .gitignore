@@ -44,3 +44,16 @@ GEMINI.md
 # Demo recordings (asciinema casts and rendered GIFs)
 *.cast
 *.gif
+
+# Presentations, slides & internal demo material (keep GitHub focused on the code)
+docs/presentations/
+docs/superpowers/
+.frontend-slides/
+
+# Build & test/coverage output
+build/
+dist/
+htmlcov/
+.pytest_cache/
+.coverage
+coverage.xml

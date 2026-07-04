@@ -161,3 +161,17 @@ dmtri doctor --inventory ./my_custom_hosts.ini
   - Identifies data files in the archive for the specified epoch.
     - `seedpsd`: Removes associated seedPSD data (via CLI).
     - `wfcatalog`: Removes files using the `--delete` option in the collector.
+
+---
+
+## License
+
+Copyright © 2026 EIDA (European Integrated Data Archive).
+
+`dmtri` is free software: you can redistribute it and/or modify it under the terms of the
+[GNU General Public License](LICENSE) as published by the Free Software Foundation, either
+version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+See the [GNU General Public License](LICENSE) for more details.
