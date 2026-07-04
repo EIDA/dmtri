@@ -20,6 +20,20 @@ def test_get_version_reads_pyproject():
     assert len(version) > 0
 
 
+def test_get_version_falls_back_to_pyproject_when_not_installed(monkeypatch):
+    """When package metadata is absent (local dev), read the version from pyproject."""
+    import dmtri.utils as u
+    from importlib.metadata import PackageNotFoundError
+
+    def _not_installed(name):
+        raise PackageNotFoundError(name)
+
+    monkeypatch.setattr(u, "version", _not_installed)
+    v = u.get_version()
+    assert v not in ("", "unknown")
+    assert v[0].isdigit()
+
+
 def test_parse_datetime_args_valid():
     args = SimpleNamespace(
         starttime=parse_flexible_date("2025-01-01T00:00:00"),

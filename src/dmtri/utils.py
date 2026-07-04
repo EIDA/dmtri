@@ -2,7 +2,10 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11 falls back to the tomli backport
+    import tomli as tomllib
 
 from importlib.metadata import version, PackageNotFoundError
 
