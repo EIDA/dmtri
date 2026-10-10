@@ -3,14 +3,25 @@
   gather_facts: false
 
   vars:
-    # 'seedpsd_dir' should be defined in inventory
-    # archive_root is usually assumed to be 'iso_sds' relative to seedpsd_dir or absolute
+    # Both come from the inventory, per seedpsd host:
+    #   seedpsd_dir     -- installation root, where `uv run seedpsd-cli` works
+    #   seedpsd_archive -- ABSOLUTE path to the SDS archive root
+    # The archive path must be absolute: discovery and the CLI run in different
+    # working directories (discovery in the login shell's cwd, the CLI under
+    # seedpsd_dir), so relative paths collected here would not resolve later.
 
   tasks:
     - name: Ensure 'seedpsd_dir' is defined for this host
       fail:
         msg: "'seedpsd_dir' must be set in the inventory for {{ inventory_hostname }}"
       when: seedpsd_dir is not defined
+
+    - name: Ensure 'seedpsd_archive' is defined for this host
+      fail:
+        msg: >-
+          'seedpsd_archive' must be set in the inventory for {{ inventory_hostname }}
+          -- the absolute path to the SDS archive root (e.g. /home/qc/iso_sds)
+      when: seedpsd_archive is not defined
 
     - name: Ensure required variables are provided
       fail:
@@ -56,7 +67,7 @@
 
     - name: "[Discovery] Find SDS files across years"
       shell: >
-        find iso_sds/{{ item_year }}/{{ net }}/{{ sta }}/{{ chan }}.{{ file_suffix }}/ -type f {{ name_patterns.stdout }}
+        find {{ seedpsd_archive }}/{{ item_year }}/{{ net }}/{{ sta }}/{{ chan }}.{{ file_suffix }}/ -type f {{ name_patterns.stdout }}
       loop: "{{ query('nested', year_range, network_list, station_list, channel_list) }}"
       vars:
         item_year: "{{ item[0] }}"
@@ -90,9 +101,21 @@
           - "========================================"
       when: true
 
-    - name: "Check if files were found"
-      fail:
-        msg: "No SDS files found for the given criteria."
+    # A stream can legitimately be absent from this archive: the seedpsd host
+    # carries a different network set than the FDSN node (5S, for instance, is
+    # on the node but not here). PSD simply cannot be computed for it, which is
+    # not a failure -- ending the play lets a multi-stream caller carry on.
+    - name: "No SDS files matched -- nothing to process"
+      debug:
+        msg: >-
+          No SDS files found under {{ seedpsd_archive }} for
+          {{ network_list | join(',') }}.{{ station_list | join(',') }}
+          {{ channel_list | join(',') }} between {{ starttime }} and {{ endtime }}
+          -- skipping (the stream may not be present in this archive).
+      when: all_files | length == 0
+
+    - name: "End play for this host when there is nothing to process"
+      meta: end_host
       when: all_files | length == 0
 
     - name: Write matched files to temporary list

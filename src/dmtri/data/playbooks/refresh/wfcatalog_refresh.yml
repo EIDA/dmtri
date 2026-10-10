@@ -125,18 +125,35 @@
         - "{{ collector_script }}"
         - "config.json"
 
+    # Two optional host settings, for nodes that protect their memory:
+    #   wfcatalog_batch_wrapper -- e.g. /usr/local/sbin/run-batch: runs the
+    #     collector inside a memory-capped systemd slice (needs sudo, so the task
+    #     becomes root; the wrapper itself drops back to the collector user).
+    #     sudo clears the environment, so PYTHONPATH is passed with env.
+    #   wfcatalog_lock -- the lock file the scheduled (cron) collector holds.
+    #     dmtri takes the same lock and does not run while cron's collector does.
+    # Without them the collector runs exactly as before.
     - name: Process files in batches
       shell:
         cmd: |
           set -o pipefail
           LOG_FILE="WFCatalog-refresh-{{ net_str }}-{{ sta_str }}-{{ start_date }}-{{ end_date }}-batch-{{ ansible_loop.index }}.log"
-          {{ venv_python }} {{ collector_script }} \
+          {{ (wfcatalog_batch_wrapper ~ ' ') if wfcatalog_batch_wrapper | default('') else '' }}{{ ('/usr/bin/flock -n -E 75 ' ~ wfcatalog_lock ~ ' ') if wfcatalog_lock | default('') else '' }}/usr/bin/env PYTHONPATH={{ collector_dir }} PYTHONUNBUFFERED=1 \
+            {{ venv_python }} {{ collector_script }} \
             --list '{{ item | to_json }}' \
             --update --force --csegs --flags \
             --stdout 2>&1 | tee "$LOG_FILE"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -eq 75 ]; then
+            echo "NOT RUN: the scheduled WFCatalog collector is running ({{ wfcatalog_lock | default('') }} is locked). Try again later." | tee -a "$LOG_FILE"
+          fi
+          exit "$rc"
         chdir: "{{ temp_workspace.path }}"
       args:
         executable: /bin/bash
+      vars:
+        # A task var, because inventory `ansible_become=false` beats `become:`.
+        ansible_become: "{{ (wfcatalog_batch_wrapper | default('')) | length > 0 }}"
       environment:
         PYTHONPATH: "{{ collector_dir }}"
         PYTHONUNBUFFERED: "1"

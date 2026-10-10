@@ -1,0 +1,350 @@
+- name: "Repair missing or invalid PSD for one channel over a bounded day window"
+  hosts: seedpsd_nodes
+  gather_facts: false
+
+  # Expected extra-vars (one channel, one window -- `dmtri fix --psd` calls this
+  # once per finding, having widened the reported day by +-N):
+  #   network, station, channel : exact codes
+  #   location                  : used for the /coverage query; the SDS layout has
+  #                               no location directory, so discovery ignores it
+  #   starttime, endtime        : ISO; the repair window
+  #   dmtri_status_file         : path ON THE CONTROL NODE where this play records
+  #                               its outcome, so the caller can tell a repair from
+  #                               a skip instead of reading rc=0 and assuming success
+  #
+  # From inventory, per seedpsd host:
+  #   seedpsd_dir      : installation root, where `uv run seedpsd-cli` works
+  #   seedpsd_archive  : ABSOLUTE path to the SDS archive root
+  #   seedpsd_parallel : off by default -- the admin decides per machine, since
+  #                      only they know whether the box has CPU to spare
+  #   seedpsd_max_cpu  : only meaningful with seedpsd_parallel
+  #
+  # Two kinds of broken day, both fixed by the same command:
+  #   MISSING -- no PSD record at all
+  #   INVALID -- records exist, none valid
+  # `data mseed --update` means *force*: seedpsd reprocesses every file it is
+  # given, whatever its previous state. (`data update-dirty` is a different
+  # tool -- it retries files seedpsd's own table marks unprocessed, for a whole
+  # channel, typically after `metadata update`. Not needed here.)
+
+  vars:
+    # seedpsd_parallel / seedpsd_max_cpu are NOT defined here: play vars outrank
+    # inventory vars, so a default here would silently override hosts.ini.
+    # They are defaulted with default() where they are used.
+    psd_service_url: "http://127.0.0.1:8000"
+    loc_q: "{{ location | default('') | trim or '--' }}"
+
+  tasks:
+    - name: Ensure 'seedpsd_dir' is defined for this host
+      fail:
+        msg: "'seedpsd_dir' must be set in the inventory for {{ inventory_hostname }}"
+      when: seedpsd_dir is not defined
+
+    - name: Ensure 'seedpsd_archive' is defined for this host
+      fail:
+        msg: >-
+          'seedpsd_archive' must be set in the inventory for {{ inventory_hostname }}
+          -- the absolute path to the SDS archive root (e.g. /home/qc/iso_sds)
+      when: seedpsd_archive is not defined
+
+    - name: Ensure required variables are provided
+      fail:
+        msg: "You must pass 'network', 'station', 'channel', 'starttime' and 'endtime' via -e"
+      when: >-
+        network is not defined or station is not defined or channel is not defined
+        or starttime is not defined or endtime is not defined
+
+    # dmtri's run_psd_fix validates these against strict allow-lists before the
+    # play is ever invoked (fix._validate_fix), so nothing shell-special can
+    # arrive through `dmtri fix`. This assert is for the other caller: a human
+    # running the playbook directly with -e. The values are interpolated into a
+    # shell block below, and availability_rebuild.yml uses `command: argv:` for
+    # the same reason -- a shipped playbook should not depend on its caller
+    # having sanitised its input.
+    - name: "Reject values that are unsafe to interpolate into a shell command"
+      assert:
+        that:
+          - network is match('^[A-Za-z0-9*?_-]{1,8}$')
+          - station is match('^[A-Za-z0-9*?_-]{1,8}$')
+          - channel is match('^[A-Za-z0-9*?_-]{1,8}$')
+          - (location | default('')) is match('^[A-Za-z0-9*?_-]{0,8}$')
+          - starttime is match('^\d{4}-\d{2}-\d{2}(T[0-9:.]+)?$')
+          - endtime is match('^\d{4}-\d{2}-\d{2}(T[0-9:.]+)?$')
+        fail_msg: >-
+          Refusing to run: one of network/station/channel/location/starttime/endtime
+          is not a plain FDSN code or ISO date. These are interpolated into a shell
+          command, so anything outside the allow-list is rejected rather than quoted.
+        quiet: true
+
+    - name: Set derived variables
+      set_fact:
+        file_suffix: "D"
+        start_date: "{{ starttime | regex_replace('T.*$', '') }}"
+        end_date: "{{ endtime | regex_replace('T.*$', '') }}"
+
+    # ---------------------------------------------------------------
+    # EXTENT
+    #
+    # Measured against /coverage, not against seedpsd's file table. A dirty day
+    # HAS a file row, so a presence diff reports it as healthy -- that blind spot
+    # is why an earlier version printed "MISSING PSD: 19" for a channel with 30
+    # invalid days. Validity is the thing that matters, so validity is what we
+    # measure. A record belongs to the day its start falls on.
+    # ---------------------------------------------------------------
+    - name: "[Extent] Classify every archived day as has-PSD / missing / invalid"
+      shell: |
+        set -o pipefail
+        find {{ seedpsd_archive }}/*/{{ network }}/{{ station }}/{{ channel }}.{{ file_suffix }}/ \
+             -type f 2>/dev/null | grep -oE '[0-9]{4}\.[0-9]{3}$' | sort -u > /tmp/psd_disk_$$.txt
+        if [ ! -s /tmp/psd_disk_$$.txt ]; then
+          echo "disk=0"; echo "hasvalid=0"; echo "missing=0"; echo "dirty=0"
+          echo "dirtyyears="; rm -f /tmp/psd_disk_$$.txt; exit 0
+        fi
+        y0=$(head -1 /tmp/psd_disk_$$.txt | cut -d. -f1)
+        y1=$(tail -1 /tmp/psd_disk_$$.txt | cut -d. -f1)
+        # Convert YYYY.DOY -> YYYY-MM-DD so disk days and record days compare.
+        while read d; do date -u -d "${d%%.*}-01-01 +$(( 10#${d##*.} - 1 )) days" +%Y-%m-%d; done \
+             < /tmp/psd_disk_$$.txt | sort -u > /tmp/psd_diskdates_$$.txt
+        # curl on a seedpsd host may be the snap build, whose confinement blocks
+        # BOTH /tmp and hidden paths in $HOME -- it exits 23 (write error) on a
+        # dotfile and 0 writing nothing to /tmp. So: a visible path under $HOME,
+        # and then prove we actually got a CSV. An empty file would make every
+        # day look like it has no record, which is the wrong answer in the
+        # dangerous direction -- it manufactures a huge fake gap.
+        COV="$HOME/dmtri_psd_cov_$$.csv"
+        curl -s --max-time 120 \
+          "{{ psd_service_url }}/coverage?net={{ network | urlencode }}&sta={{ station | urlencode }}&loc={{ loc_q | urlencode }}&cha={{ channel | urlencode }}&start=${y0}-01-01T00:00:00&end=$((y1+1))-01-01T00:00:00" \
+          -o "$COV" 2>/dev/null || true
+        if [ ! -s "$COV" ]; then
+          echo "coverage_query=FAILED"
+        else
+          echo "coverage_query=ok"
+        fi
+        # Column 6 is Start time, column 8 is Is valid. Key each record to the
+        # day its start falls on.
+        awk -F, 'NR>1 {split($6,a,"T"); print a[1]}' "$COV" 2>/dev/null | sort -u > /tmp/psd_anyrec_$$.txt
+        awk -F, 'NR>1 && $8=="True" {split($6,a,"T"); print a[1]}' "$COV" 2>/dev/null | sort -u > /tmp/psd_valid_$$.txt
+        comm -23 /tmp/psd_diskdates_$$.txt /tmp/psd_anyrec_$$.txt > /tmp/psd_missing_$$.txt
+        comm -12 /tmp/psd_diskdates_$$.txt /tmp/psd_anyrec_$$.txt \
+          | comm -23 - /tmp/psd_valid_$$.txt > /tmp/psd_dirty_$$.txt
+        echo "disk=$(wc -l < /tmp/psd_diskdates_$$.txt)"
+        echo "hasvalid=$(comm -12 /tmp/psd_diskdates_$$.txt /tmp/psd_valid_$$.txt | wc -l)"
+        echo "missing=$(wc -l < /tmp/psd_missing_$$.txt)"
+        echo "dirty=$(wc -l < /tmp/psd_dirty_$$.txt)"
+        echo "firstbad=$(cat /tmp/psd_missing_$$.txt /tmp/psd_dirty_$$.txt | sort | head -1)"
+        echo "lastbad=$(cat /tmp/psd_missing_$$.txt /tmp/psd_dirty_$$.txt | sort | tail -1)"
+        echo "dirtyyears=$(cut -d- -f1 /tmp/psd_dirty_$$.txt | sort -u | tr '\n' ' ')"
+        echo "dirtyinwindow=$(awk -v a={{ start_date }} -v b={{ end_date }} '$1>=a && $1<=b' /tmp/psd_dirty_$$.txt | wc -l)"
+        echo "dirtywindowyears=$(awk -v a={{ start_date }} -v b={{ end_date }} '$1>=a && $1<=b' /tmp/psd_dirty_$$.txt | cut -d- -f1 | sort -u | tr '\n' ' ')"
+        echo "missinginwindow=$(awk -v a={{ start_date }} -v b={{ end_date }} '$1>=a && $1<=b' /tmp/psd_missing_$$.txt | wc -l)"
+        rm -f /tmp/psd_disk_$$.txt /tmp/psd_diskdates_$$.txt "$COV" \
+              /tmp/psd_anyrec_$$.txt /tmp/psd_valid_$$.txt /tmp/psd_missing_$$.txt /tmp/psd_dirty_$$.txt
+      args:
+        executable: /bin/bash
+      register: extent_raw
+      changed_when: false
+      failed_when: false
+
+    - name: "[Extent] Parse"
+      set_fact:
+        extent: "{{ dict(extent_raw.stdout_lines | default([]) | map('split', '=') | list) }}"
+
+    - name: "DISPLAY GAP EXTENT"
+      debug:
+        msg:
+          - "========================================"
+          - " PSD gap extent -- {{ network }}.{{ station }}.{{ location | default('') }}.{{ channel }}"
+          - "========================================"
+          - "{{ '  !! /coverage query FAILED -- figures below are not trustworthy' if extent.coverage_query | default('') == 'FAILED' else '  (validity measured against /coverage)' }}"
+          - "  day-files in archive : {{ extent.disk | default('?') }}"
+          - "  have valid PSD       : {{ extent.hasvalid | default('?') }}"
+          - "  MISSING (no record)  : {{ extent.missing | default('?') }}"
+          - "  INVALID (no valid)   : {{ extent.dirty | default('?') }}{{ '   years: ' ~ extent.dirtyyears if extent.dirty | default('0') | int > 0 else '' }}"
+          - "  worst range          : {{ extent.firstbad | default('-') }} .. {{ extent.lastbad | default('-') }}"
+          - "----------------------------------------"
+          - "  in this window ({{ start_date }} .. {{ end_date }}):"
+          - "    missing {{ extent.missinginwindow | default('?') }}, invalid {{ extent.dirtyinwindow | default('?') }}"
+          - "========================================"
+
+    # ---------------------------------------------------------------
+    # DISCOVERY
+    # ---------------------------------------------------------------
+    - name: "[Discovery] Generate -name patterns for the window"
+      shell: |
+        start="{{ start_date }}"; end="{{ end_date }}"
+        s=$(date -d "$start" +%s); e=$(date -d "$end" +%s)
+        out=""
+        for i in $(seq 0 $(( (e - s) / 86400 ))); do
+          d=$(date -d "@$((s + i * 86400))" +%Y.%j)
+          out="$out -name '*{{ file_suffix }}.${d}' -o"
+        done
+        echo "${out% -o}"
+      args:
+        executable: /bin/bash
+      register: name_patterns
+      changed_when: false
+
+    - name: "[Discovery] Find SDS files in the window"
+      shell: >
+        find {{ seedpsd_archive }}/{{ item }}/{{ network }}/{{ station }}/{{ channel }}.{{ file_suffix }}/
+        -type f \( {{ name_patterns.stdout }} \)
+      loop: "{{ range(start_date[:4] | int, (end_date[:4] | int) + 1) | list }}"
+      args:
+        executable: /bin/bash
+      register: find_results
+      changed_when: false
+      ignore_errors: true
+
+    - name: "[Discovery] Collect matched paths"
+      set_fact:
+        all_files: >-
+          {{ find_results.results | map(attribute='stdout_lines') | flatten
+             | select('string') | reject('equalto', '') | list }}
+
+    # A window can legitimately contain no files -- the stream may not be in this
+    # archive at all. Recorded as a SKIP, not a repair and not a failure.
+    - name: "Record the skip outcome on the control node"
+      copy:
+        content: >-
+          {{ {'outcome': 'skipped',
+              'reason': 'no SDS files in ' ~ seedpsd_archive ~ ' for this window',
+              'files': 0, 'dirty_in_window': 0,
+              'gap_missing': extent.missing | default('0') | int,
+              'gap_dirty': extent.dirty | default('0') | int} | to_json }}
+        dest: "{{ dmtri_status_file }}"
+      delegate_to: localhost
+      when: all_files | length == 0 and dmtri_status_file is defined
+
+    - name: "No SDS files in the window -- nothing to process"
+      debug:
+        msg: >-
+          No SDS files under {{ seedpsd_archive }} for
+          {{ network }}.{{ station }}..{{ channel }} between {{ start_date }} and
+          {{ end_date }} -- SKIPPED (the stream may not be present in this archive).
+      when: all_files | length == 0
+
+    - name: "End play for this host when there is nothing to process"
+      meta: end_host
+      when: all_files | length == 0
+
+    - name: "Write matched files to a per-run list"
+      copy:
+        content: "{{ all_files | join('\n') }}"
+        dest: "/tmp/psd_repair_{{ network }}_{{ station }}_{{ channel }}_{{ start_date }}.txt"
+
+    # async/poll: even a bounded window is minutes of CPU, and the admin may widen
+    # it. A plain synchronous task would risk losing a long run to a dropped SSH
+    # connection with nothing recorded.
+    - name: "Compute PSD for the window (missing days)"
+      shell: |
+        set -o pipefail
+        cd {{ seedpsd_dir }} && \
+        uv run seedpsd-cli data mseed --update \
+          {{ '--parallel --max-cpu ' ~ (seedpsd_max_cpu | default(4)) if seedpsd_parallel | default(false) | bool else '' }} \
+          --list "/tmp/psd_repair_{{ network }}_{{ station }}_{{ channel }}_{{ start_date }}.txt" \
+          2>&1 | tee psd_repair_last_run.log
+      args:
+        executable: /bin/bash
+      async: 7200
+      poll: 15
+      register: psd_result
+
+    # seedpsd prints "Done." and exits 0 even when it skipped every file
+    # ("Unknown data source", streams shorter than ppsd_length, duplicate
+    # sources...). Collect the reasons it gave so the window is not reported as
+    # repaired on rc alone. One line per reason: "<count> <reason>". Counts are
+    # per file or per stream fragment, so a reason does not mean a whole day lost.
+    - name: "Collect the reasons seedpsd gave for skipping or failing files"
+      shell: |
+        cd {{ seedpsd_dir }}
+        {
+          grep -F '[WARNING]' psd_repair_last_run.log | grep -v 'Cleaning overlaps' \
+            | sed -E 's/^\[[^]]*\] \[[0-9]+\] \[WARNING\] //; s/^[^ ]+ : //; s/^Skipping stream \([^)]*\): //'
+          grep -E '^(seedpsd\.errors|sqlalchemy\.exc|psycopg\.errors)\.[A-Za-z]+: ' psd_repair_last_run.log \
+            | sed -E 's/^[a-z.]+\.([A-Za-z]+): /\1: /'
+        } | cut -c1-120 | sort | uniq -c | sort -rn | head -5 | sed -E 's/^ +//'
+      args:
+        executable: /bin/bash
+      register: psd_skips
+      changed_when: false
+      failed_when: false
+
+    - name: "DISPLAY WHAT SEEDPSD SKIPPED"
+      debug:
+        msg: "{{ ['seedpsd skipped some data (count reason) -- affected days may still lack PSD:'] + psd_skips.stdout_lines }}"
+      when: psd_skips.stdout_lines | default([]) | length > 0
+
+    - name: "DISPLAY PSD REPAIR RESULTS"
+      debug:
+        msg:
+          - "========================================"
+          - " PSD Repair -- {{ network }}.{{ station }}.{{ location | default('') }}.{{ channel }}"
+          - "========================================"
+          - "  Window        : {{ start_date }} .. {{ end_date }}"
+          - "  Files         : {{ all_files | length }}"
+          - "  Parallel      : {{ seedpsd_parallel | default(false) | bool }}{{ ' (max-cpu ' ~ (seedpsd_max_cpu | default(4)) ~ ')' if seedpsd_parallel | default(false) | bool else '' }}"
+          - "  mseed --update: {{ 'SUCCESS' if psd_result.rc == 0 else 'FAILED rc=' ~ psd_result.rc }}"
+          - "----------------------------------------"
+          - "  channel still needs: {{ [(extent.missing | default('0') | int) - (extent.missinginwindow | default('0') | int), 0] | max }} missing + {{ [(extent.dirty | default('0') | int) - (extent.dirtyinwindow | default('0') | int), 0] | max }} invalid day(s)"
+          - "  (a larger remainder means a backfill, not a repair:"
+          - "   seedpsd-cli data load --network {{ network }} --station {{ station }} --channel {{ channel }} --year <Y>)"
+          - "========================================"
+
+    - name: "Record the repair outcome on the control node"
+      copy:
+        content: >-
+          {{ {'outcome': ('repaired' if psd_result.rc == 0 else 'failed'),
+              'files': all_files | length,
+              'dirty_in_window': extent.dirtyinwindow | default('0') | int,
+              'gap_missing': extent.missing | default('0') | int,
+              'gap_dirty': extent.dirty | default('0') | int,
+              'remaining_missing': [(extent.missing | default('0') | int) - (extent.missinginwindow | default('0') | int), 0] | max,
+              'remaining_dirty': [(extent.dirty | default('0') | int) - (extent.dirtyinwindow | default('0') | int), 0] | max,
+              'seedpsd_said': psd_skips.stdout_lines | default([]),
+              'rc': psd_result.rc} | to_json }}
+        dest: "{{ dmtri_status_file }}"
+      delegate_to: localhost
+      when: dmtri_status_file is defined
+
+    # ---------------------------------------------------------------
+    # JOB TRACKING
+    # ---------------------------------------------------------------
+    - name: Ensure ~/.dmtri/jobs/{{ inventory_hostname }} directory exists
+      file:
+        path: "~/.dmtri/jobs/{{ inventory_hostname }}"
+        state: directory
+        mode: '0755'
+
+    - name: "Load existing job list (if exists)"
+      slurp:
+        src: "~/.dmtri/jobs/{{ inventory_hostname }}/seedpsd-repair.json"
+      register: job_file
+      ignore_errors: true
+
+    - name: "Parse job list or default to []"
+      set_fact:
+        job_list: >-
+          {{ (job_file.content | b64decode | from_json) if job_file.content is defined else [] }}
+
+    - name: Define new job entry
+      set_fact:
+        new_job: {
+          "type": "seedpsd_psd_repair",
+          "job_id": "psdfix-{{ lookup('pipe', 'date +%s') }}",
+          "host": "{{ inventory_hostname }}",
+          "stream": "{{ network }}.{{ station }}.{{ location | default('') }}.{{ channel }}",
+          "window_start": "{{ start_date }}",
+          "window_end": "{{ end_date }}",
+          "files_processed": "{{ all_files | length }}",
+          "dirty_in_window": "{{ extent.dirtyinwindow | default('0') }}",
+          "gap_missing": "{{ extent.missing | default('unknown') }}",
+          "gap_dirty": "{{ extent.dirty | default('unknown') }}",
+          "parallel": "{{ seedpsd_parallel | default(false) | bool }}",
+          "rc": "{{ psd_result.rc | default('unknown') }}",
+          "created_at": "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}"
+        }
+
+    - name: "Save updated job list"
+      copy:
+        content: "{{ (job_list + [new_job]) | to_nice_json }}"
+        dest: "~/.dmtri/jobs/{{ inventory_hostname }}/seedpsd-repair.json"

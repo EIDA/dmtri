@@ -58,3 +58,59 @@ def test_run_hook_builds_correct_cmd(mock_runner, tmp_path, caplog):
 
     expected_snippet = "-e network='FR' -e station='CIEL'"
     assert expected_snippet in caplog.text.replace(",", "")
+
+
+# --- locating ansible-playbook -------------------------------------------
+#
+# `.venv/bin/dmtri` runs with the venv's interpreter but not its PATH, so a
+# bare "ansible-playbook" is not found and every play dies before it starts.
+
+def test_ansible_playbook_is_found_beside_the_interpreter(tmp_path, monkeypatch):
+    from dmtri.hooks import hooks
+
+    binary = tmp_path / "ansible-playbook"
+    binary.write_text("#!/bin/sh\n")
+    monkeypatch.setattr(hooks.sys, "executable", str(tmp_path / "python"))
+    monkeypatch.setattr(hooks.shutil, "which", lambda _: "/usr/bin/ansible-playbook")
+
+    assert hooks._ansible_playbook() == str(binary)
+
+
+def test_ansible_playbook_falls_back_to_path(tmp_path, monkeypatch):
+    from dmtri.hooks import hooks
+
+    monkeypatch.setattr(hooks.sys, "executable", str(tmp_path / "python"))
+    monkeypatch.setattr(hooks.shutil, "which", lambda _: "/usr/bin/ansible-playbook")
+
+    assert hooks._ansible_playbook() == "/usr/bin/ansible-playbook"
+
+
+def test_a_missing_ansible_is_reported_not_raised(tmp_path, monkeypatch, caplog):
+    """A batch caller must get an rc it can report, not a FileNotFoundError."""
+    from dmtri.hooks import hooks
+
+    monkeypatch.setattr(hooks.sys, "executable", str(tmp_path / "python"))
+    monkeypatch.setattr(hooks.shutil, "which", lambda _: None)
+
+    playbook = tmp_path / "p.yml"
+    playbook.write_text("- hosts: all")
+
+    with caplog.at_level("ERROR"):
+        rc = run_hook(playbook, {}, exit_on_error=False)
+
+    assert rc == 127
+    assert "ansible-playbook not found" in caplog.text
+
+
+def test_a_missing_ansible_still_exits_for_single_shot_callers(tmp_path, monkeypatch):
+    from dmtri.hooks import hooks
+
+    monkeypatch.setattr(hooks.sys, "executable", str(tmp_path / "python"))
+    monkeypatch.setattr(hooks.shutil, "which", lambda _: None)
+
+    playbook = tmp_path / "p.yml"
+    playbook.write_text("- hosts: all")
+
+    with pytest.raises(SystemExit) as e:
+        run_hook(playbook, {})
+    assert e.value.code == 127

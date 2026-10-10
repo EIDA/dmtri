@@ -62,6 +62,15 @@ def main():
     fix_parser.add_argument("--no-confirm", action="store_true", help="Skip confirmation prompt before executing")
     fix_parser.add_argument("-v", "--verbose", action="store_true", help="Stream eida-consistency explore progress (per-query URLs) live instead of waiting silently")
     fix_parser.add_argument("--debug", action="store_true", help="Show verbose output from Ansible")
+    fix_parser.add_argument("--psd", action="store_true",
+                            help="Also repair 'data present, no PSD' findings (reads them from the report; "
+                                 "can take minutes per finding, so it is opt-in)")
+    fix_parser.add_argument("--psd-only", action="store_true",
+                            help="Repair only PSD findings, skipping the availability chain")
+    fix_parser.add_argument("--psd-window", type=int, default=None, metavar="N",
+                            help="Days either side of a PSD finding to recompute (default 15)")
+    fix_parser.add_argument("--required-only", action="store_true",
+                            help="With --psd: repair only findings where PSD is an obligation (day >= 2024-01-01)")
     subparsers.add_parser("track", help="Track job status via tracking playbook.")
     doctor_parser = subparsers.add_parser("doctor", help="Check SSH connectivity to all inventory hosts")
     doctor_parser.add_argument("-v", "--verbose", action="store_true", help="Show full Ansible output per host")
@@ -141,15 +150,25 @@ def main():
             run_hook(pb, vars_to_pass, inventory=inventory_path)
 
     elif args.command == "fix":
-        from dmtri.fix import run_fix, run_verify_only
+        from dmtri.fix import run_fix, run_verify_only, run_psd_fix, DEFAULT_PSD_WINDOW_DAYS
         try:
             if args.verify_only:
                 rc = run_verify_only(args.report, inventory=inventory_path,
                                      days=args.days, indices=args.index, verbose=args.verbose)
             else:
-                rc = run_fix(args.report, inventory=inventory_path, days=args.days,
-                             indices=args.index, no_confirm=args.no_confirm,
-                             debug=args.debug, verbose=args.verbose)
+                rc = 0
+                # Availability first: fast, and proven. PSD is the expensive half.
+                if not args.psd_only:
+                    rc = run_fix(args.report, inventory=inventory_path, days=args.days,
+                                 indices=args.index, no_confirm=args.no_confirm,
+                                 debug=args.debug, verbose=args.verbose)
+                if args.psd or args.psd_only:
+                    psd_rc = run_psd_fix(
+                        args.report, inventory=inventory_path,
+                        window_days=(DEFAULT_PSD_WINDOW_DAYS if args.psd_window is None
+                                     else args.psd_window),
+                        required_only=args.required_only, no_confirm=args.no_confirm)
+                    rc = rc or psd_rc
         except RuntimeError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(2)

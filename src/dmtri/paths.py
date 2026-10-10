@@ -89,6 +89,9 @@ PLAYBOOK_METADATA_REFRESH  = _resolve_playbook("refresh/seedpsd_metadata_refresh
 # Consistency-repair (dmtri fix): reuses wfcatalog_refresh, plus a scoped
 # availability rebuild (docker exec avail-rebuild) instead of the global restart.
 PLAYBOOK_AVAILABILITY_REBUILD = _resolve_playbook("fix/availability_rebuild.yml")
+# Bounded PSD repair (dmtri fix --psd): recomputes a day window on the seedpsd
+# host and reports how much of the channel's gap remains.
+PLAYBOOK_SEEDPSD_PSD_REPAIR = _resolve_playbook("fix/seedpsd_psd_repair.yml")
 
 PLAYBOOK_SEEDPSD_CLEAN      = _resolve_playbook("clean/seedpsd_clean.yml")
 PLAYBOOK_WFCATALOG_CLEAN    = _resolve_playbook("clean/wfcatalog_clean.yml")

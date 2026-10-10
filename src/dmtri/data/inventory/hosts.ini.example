@@ -1,11 +1,22 @@
 # hosts.ini.example
 # Replace placeholders with your actual host details
 
+# seedpsd often runs on a DIFFERENT machine than wfcatalog/availability -- the
+# FDSN node may only reverse-proxy /eidaws/psd/1/ to it. Point this group at the
+# host where seedpsd-cli and the SDS archive actually live, and give it its own
+# connection settings (user, key or password) rather than sharing them via
+# [all:vars], which would push the wrong credentials onto the other hosts.
 [seedpsd_nodes]
 <SEEDPSD_HOST> ansible_user=<USER> ansible_ssh_pass="<PASSWORD>" ansible_connection=ssh ansible_become=false ansible_ssh_common_args='-o StrictHostKeyChecking=no'
 
 [seedpsd_nodes:vars]
 seedpsd_dir=/home/<USER>/seedpsd
+# ABSOLUTE path to the SDS archive root on the seedpsd host. Must be absolute:
+# file discovery and seedpsd-cli run in different working directories.
+seedpsd_archive=/home/<USER>/iso_sds
+# Optional: let seedpsd use several CPUs (off by default).
+# seedpsd_parallel=true
+# seedpsd_max_cpu=4
 
 [wf_catalogue]
 <WFCATALOG_HOST> ansible_user=<USER> ansible_ssh_pass="<PASSWORD>" ansible_connection=ssh ansible_become=false ansible_ssh_common_args='-o StrictHostKeyChecking=no'

@@ -1,4 +1,5 @@
 import ansible_runner
+import shutil
 import sys
 from pathlib import Path
 import logging
@@ -6,6 +7,24 @@ from dmtri.paths import INVENTORY_FILE
 
 
 logger = logging.getLogger(__name__)
+
+# Exit code shells use for "command not found"; reported per play so a batch
+# keeps its own accounting instead of dying with a traceback.
+_RC_NOT_FOUND = 127
+
+
+def _ansible_playbook() -> str:
+    """Absolute path to ansible-playbook, preferring the one installed beside us.
+
+    dmtri is usually launched as `.venv/bin/dmtri`, and a shebang sets the
+    interpreter but NOT PATH -- so a bare "ansible-playbook" raises
+    FileNotFoundError and every play dies before it starts. ansible is a
+    declared dependency, so the console script sits next to this interpreter.
+    """
+    local = Path(sys.executable).parent / "ansible-playbook"
+    if local.is_file():
+        return str(local)
+    return shutil.which("ansible-playbook") or ""
 def run_hook(playbook_name: Path, vars: dict, inventory: Path = INVENTORY_FILE,
              exit_on_error: bool = True) -> int:
     """
@@ -24,8 +43,17 @@ def run_hook(playbook_name: Path, vars: dict, inventory: Path = INVENTORY_FILE,
             value = ",".join(value)
         extra_vars.extend(["-e", f"{key}='{value}'"])
 
+    executable = _ansible_playbook()
+    if not executable:
+        logger.error(
+            "ansible-playbook not found -- install dmtri's dependencies "
+            "(uv sync) or put ansible on PATH")
+        if exit_on_error:
+            sys.exit(_RC_NOT_FOUND)
+        return _RC_NOT_FOUND
+
     cmd = [
-        "ansible-playbook",
+        executable,
         str(playbook_name.resolve()),
         "-i",
         str(inventory.resolve()),
@@ -37,7 +65,7 @@ def run_hook(playbook_name: Path, vars: dict, inventory: Path = INVENTORY_FILE,
 
 
     out, err, rc = ansible_runner.run_command(
-        executable_cmd="ansible-playbook",
+        executable_cmd=executable,
         cmdline_args=cmd[1:], 
         input_fd=sys.stdin,
         output_fd=sys.stdout,
